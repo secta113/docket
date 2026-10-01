@@ -75,7 +75,7 @@ fn each_broken_rule_fails_under_its_check() {
         )
     };
     // Each case breaks one rule of a clean repository: (the check that must name it, what to write)
-    let cases: [(&str, &str, String); 10] = [
+    let cases: [(&str, &str, String); 11] = [
         ("the bundle is seen", "docs/backlog/rules.md", String::new()),
         (
             "every backlog document keeps the format",
@@ -96,6 +96,11 @@ fn each_broken_rule_fails_under_its_check() {
             "the log keeps its structure",
             "docs/log.md",
             "# Log\n\n## 2026-10-01\n\n## 2026-10-02\n".into(),
+        ),
+        (
+            "the log keeps its structure",
+            "docs/log.md",
+            "# Log\n\nNo headings, just text.\n".into(),
         ),
         (
             "every document is a known type in its place",

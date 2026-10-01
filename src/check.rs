@@ -4,7 +4,8 @@
 //!   backlog item the log points to exists.
 //! - **`docs/` is one OKF bundle**: every document is a known type in the directory for its type, a spec sits in the
 //!   directory for its status, every index file equals what `docket index` writes, and no spec sits at the root.
-//! - **The log keeps the OKF log structure**: every second-level heading is a date, newest first.
+//! - **The log keeps the OKF log structure**: every second-level heading is a date, newest first, and a log
+//!   with entries has one.
 //!
 //! Each check has a floor: when the scan finds nothing at all, it fails instead of passing with nothing checked.
 
@@ -202,10 +203,15 @@ pub fn dangling_backlog_refs(log: &str, names: &[String]) -> Vec<String> {
 }
 
 /// What breaks the log structure, in reading order.
+///
+/// The floor: a log with entries has a date heading. A new log holds only its title and HTML comments (the format
+/// guide), or nothing, and passes. Anything else visible is an entry, so text alone, or dates at another heading
+/// level, fails instead of passing with no date checked.
 pub fn log_problems(text: &str) -> Vec<String> {
+    let shown = visible(text);
     let mut found = Vec::new();
     let mut last: Option<NaiveDate> = None;
-    for caps in LOG_HEADING.captures_iter(&visible(text)) {
+    for caps in LOG_HEADING.captures_iter(&shown) {
         let heading = &caps[1];
         let day = DATE
             .is_match(heading)
@@ -223,6 +229,23 @@ pub fn log_problems(text: &str) -> Vec<String> {
             ));
         }
         last = Some(day);
+    }
+    let mut lines = shown
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .peekable();
+    // The title: a first-level heading on the first line, unless it is a date (an entry one level up)
+    lines.next_if(|line| {
+        line.strip_prefix("# ")
+            .is_some_and(|title| !DATE.is_match(title.trim()))
+    });
+    if last.is_none()
+        && let Some(entry) = lines.next()
+    {
+        found.push(format!(
+            "an entry with no ## YYYY-MM-DD heading in the log: {entry}"
+        ));
     }
     found
 }
@@ -345,18 +368,39 @@ mod tests {
 
     #[test]
     fn the_log_structure_is_checked() {
-        let good = "# Log\n\n<!--\n## YYYY-MM-DD\n-->\n\n## 2026-10-02\n\n### b\n\n## 2026-10-01\n\n### a\n\n```\n## x\n```\n";
-        assert_eq!(log_problems(good), Vec::<String>::new());
+        let good = [
+            (
+                "entries",
+                "# Log\n\n<!--\n## YYYY-MM-DD\n-->\n\n## 2026-10-02\n\n### b\n\n## 2026-10-01\n\n### a\n\n```\n## x\n```\n",
+            ),
+            // A new repository has no entries yet: the title and the format guide, or nothing at all
+            (
+                "only the title and the guide",
+                "# Log\n\n<!--\n### <Task name>\n-->\n",
+            ),
+            ("empty", ""),
+        ];
+        for (name, text) in good {
+            assert_eq!(log_problems(text), Vec::<String>::new(), "{name}");
+        }
         let bad = [
             ("task on the date line", "## 2026-10-01 a task\n"),
             ("not a real date", "## 2026-13-01\n"),
             ("oldest first", "## 2026-10-01\n\n## 2026-10-02\n"),
             ("same date twice", "## 2026-10-01\n\n## 2026-10-01\n"),
             ("digits of another script", "## ２０２６-10-01\n"),
+            // The floor: text under the title means entries, and entries sit under a date
+            ("text without a date", "# Log\n\nNo headings, just text.\n"),
+            ("dates one level up", "# Log\n\n# 2026-10-02\n\n### a\n"),
+            ("dates one level down", "# Log\n\n### 2026-10-02\n"),
+            ("a date for the title", "# 2026-10-02\n"),
         ];
-        for (name, text) in bad {
-            assert!(!log_problems(text).is_empty(), "{name}");
-        }
+        let passed: Vec<&str> = bad
+            .iter()
+            .filter(|(_, text)| log_problems(text).is_empty())
+            .map(|(name, _)| *name)
+            .collect();
+        assert!(passed.is_empty(), "passed: {passed:?}");
     }
 
     const SPEC: &str = "---\ntype: Spec\ntitle: Something\ndescription: One sentence.\nstatus: stable\n---\n\n# Goals\n";
