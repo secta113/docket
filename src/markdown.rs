@@ -11,9 +11,10 @@ use unicode_general_category::{GeneralCategory, get_general_category};
 
 use crate::source::read_source;
 
-// Not rendered, so no heading inside them gets an anchor: HTML comments and fenced code blocks
+// Not rendered, so no heading inside them gets an anchor: HTML comments and fenced code blocks. As in GFM, a fence may
+// be indented by up to 3 spaces
 static HIDDEN: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?sm)<!--.*?-->|^```.*?^```").unwrap());
+    LazyLock::new(|| Regex::new(r"(?sm)<!--.*?-->|^ {0,3}```.*?^ {0,3}```").unwrap());
 static HEADING: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?m)^#{1,6}[ \t]+(.+?)[ \t]*$").unwrap());
 static LINK: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\[([^\]]*)\]\(([^)\s]+)\)").unwrap());
@@ -172,7 +173,8 @@ mod tests {
 
     #[test]
     fn repeated_and_hidden_headings() {
-        let text = "# Same\n\n## Same\n\n<!--\n## Hidden\n-->\n\n```\n## Code\n```\n";
+        // GFM lets a fence be indented by up to 3 spaces, and the closing fence by its own amount
+        let text = "# Same\n\n## Same\n\n<!--\n## Hidden\n-->\n\n```\n## Code\n```\n\n   ```\n## Indented\n ```\n";
         let expected: HashSet<String> = ["same", "same-1"].map(String::from).into();
         assert_eq!(anchors(text), expected);
     }
