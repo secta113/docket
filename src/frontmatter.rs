@@ -1,0 +1,81 @@
+//! A record split into its YAML frontmatter and the text under each `# heading` of its body.
+
+use std::collections::BTreeMap;
+use std::sync::LazyLock;
+
+use regex::Regex;
+use yaml_rust2::yaml::Hash;
+use yaml_rust2::{Yaml, YamlLoader};
+
+/// Body heading -> the text under it, trimmed. A repeated heading collects the text under every occurrence.
+pub type Sections = BTreeMap<String, String>;
+
+static FRONT_MATTER: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?s)\A---\n(.*?)\n---\n(.*)\z").unwrap());
+
+/// The frontmatter, and the text under each `# heading` of the body.
+///
+/// The YAML is read as YAML 1.2: a date or a datetime is a string, quoted or not, and the schema parses it. YAML 1.1
+/// (PyYAML) types an unquoted one and leaves a quoted one a string, so the same value could pass or fail by its quotes.
+pub fn split(text: &str) -> Result<(Hash, Sections), String> {
+    let text = text.replace("\r\n", "\n");
+    let caps = FRONT_MATTER
+        .captures(&text)
+        .ok_or("no frontmatter (a YAML block between `---` lines)")?;
+    let docs = YamlLoader::load_from_str(&caps[1])
+        .map_err(|e| format!("frontmatter is not valid YAML: {e}"))?;
+    let Some(Yaml::Hash(meta)) = docs.into_iter().next() else {
+        return Err("frontmatter is not a mapping".into());
+    };
+    let mut lines: BTreeMap<String, Vec<&str>> = BTreeMap::new();
+    let mut current: Option<String> = None;
+    for line in caps[2].split('\n') {
+        if let Some(heading) = line.strip_prefix("# ") {
+            let name = heading.trim().to_string();
+            lines.entry(name.clone()).or_default();
+            current = Some(name);
+        } else if let Some(name) = &current {
+            lines.get_mut(name).unwrap().push(line);
+        }
+    }
+    let sections = lines
+        .into_iter()
+        .map(|(name, lines)| (name, lines.join("\n").trim().to_string()))
+        .collect();
+    Ok((meta, sections))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sections_are_split_by_heading() {
+        let text = "---\ntype: X\n---\n\nignored\n# A\n\n one \n\n## sub\n# B\n# A\nagain\n";
+        let (meta, sections) = split(text).unwrap();
+        assert_eq!(meta[&Yaml::String("type".into())], Yaml::String("X".into()));
+        assert_eq!(sections["A"], "one \n\n## sub\nagain");
+        assert_eq!(sections["B"], "");
+        assert_eq!(sections.len(), 2);
+    }
+
+    #[test]
+    fn crlf_is_read_as_lf() {
+        assert!(split("---\r\ntype: X\r\n---\r\n# A\r\nb\r\n").is_ok());
+    }
+
+    #[test]
+    fn a_bad_frontmatter_is_caught() {
+        let bad = [
+            "# no frontmatter\n",
+            "---\n---\n",
+            "---\n- a list\n---\n",
+            "---\njust text\n---\n",
+            // In YAML, a colon followed by a space starts a mapping, so an unquoted one breaks a text field
+            "---\ndescription: how to measure: count\n---\n",
+        ];
+        for text in bad {
+            assert!(split(text).is_err(), "{text:?} passed");
+        }
+    }
+}
