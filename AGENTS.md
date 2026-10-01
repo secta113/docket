@@ -47,6 +47,9 @@ Also tracked, as in most repositories: `.gitattributes`, `.gitignore`, `Cargo.lo
   Windows SDK; without the SDK, linking fails (`kernel32.lib` not found), and Git Bash's own `link` gets in the way.
 - **Change the toolchain version only in `rust-toolchain.toml`,** and the base image (`Dockerfile`, the `container`
   in `.github/workflows/ci.yml`) to the same version. Change the packaging tools only in `requirements-build.txt`.
+- **`ruff_python_parser` and `ruff_python_ast` are pinned to one exact version, and move together.** They are
+  internal crates of Ruff, whose API changes between any two versions. Bump them by hand when the toolchain changes
+  (a new Ruff may need a newer Rust) and when Python gains syntax docket fails to read.
 - **Try a wheel as a user gets it:** build it (README) and `pip install` it into a fresh venv, outside the build tree.
 - **A change that can fail records that passed before (a new rule, a stricter rule) raises the minor version** while
   docket is `0.x`. Projects pin the exact version, so they take the change in a commit of their own.

@@ -7,6 +7,8 @@ use std::sync::LazyLock;
 
 use percent_encoding::percent_decode_str;
 use regex::Regex;
+use ruff_python_ast::statement_visitor::{StatementVisitor, walk_stmt};
+use ruff_python_ast::{PySourceType, Stmt};
 use unicode_general_category::{GeneralCategory, get_general_category};
 
 use crate::source::read_source;
@@ -198,8 +200,8 @@ pub fn links(text: &str) -> Vec<(String, String)> {
 /// `here` is the directory of the document that holds the link, for relative targets. A target starting with `/` is
 /// relative to `bundle_root`. A URL is not checked. A path with a drive letter (`C:/...`) fails: it names a file on one
 /// machine, which no other checkout and no reader on GitHub can follow. A path with `\` fails: only Windows reads it as
-/// a separator, so the same link would resolve on one machine and not on another. A link to a `.py` file names a
-/// function or class in its text.
+/// a separator, so the same link would resolve on one machine and not on another. A link to a `.py` file names in its
+/// text a function or class that the file defines.
 pub fn broken(text: &str, target: &str, here: &Path, bundle_root: &Path) -> Option<String> {
     if DRIVE.is_match(target) {
         return Some(format!(
@@ -230,26 +232,46 @@ pub fn broken(text: &str, target: &str, here: &Path, bundle_root: &Path) -> Opti
     };
     if path.ends_with(".py") {
         let name = text.trim().trim_matches('`').trim();
-        // With no name, the pattern below would match any def
         if name.is_empty() {
             return Some(format!(
                 "no function or class named in the link text: {target}"
             ));
         }
-        // The name has to be defined, not only mentioned: a call or a comment can keep a name after the definition
-        // was renamed
-        let defined = Regex::new(&format!(
-            r"(?m)^\s*(?:async\s+)?(?:def|class)\s+{}\b",
-            regex::escape(name)
-        ))
-        .unwrap();
-        if !defined.is_match(&source) {
+        // The name has to be defined, not only mentioned: a call, a comment or a string can keep a name after the
+        // definition was renamed
+        if !python_definitions(&source).contains(name) {
             return Some(format!("no def or class named {name} in {target}"));
         }
     } else if !fragment.is_empty() && !anchors(&source).contains(fragment) {
         return Some(format!("no heading with this anchor: {target}"));
     }
     None
+}
+
+/// The names of the functions and classes a Python file defines, at any depth (methods, and definitions inside
+/// functions, `if` and `try`). The file is parsed, so a `def` line inside a string or a docstring is not a definition.
+/// A file with a syntax error is read past the error, as far as the parser recovers.
+fn python_definitions(source: &str) -> HashSet<String> {
+    #[derive(Default)]
+    struct Definitions(HashSet<String>);
+    impl<'a> StatementVisitor<'a> for Definitions {
+        fn visit_stmt(&mut self, stmt: &'a Stmt) {
+            match stmt {
+                Stmt::FunctionDef(def) => {
+                    self.0.insert(def.name.to_string());
+                }
+                Stmt::ClassDef(class) => {
+                    self.0.insert(class.name.to_string());
+                }
+                _ => {}
+            }
+            walk_stmt(self, stmt);
+        }
+    }
+    let module = ruff_python_parser::parse_unchecked_source(source, PySourceType::Python);
+    let mut definitions = Definitions::default();
+    definitions.visit_body(&module.syntax().body);
+    definitions.0
 }
 
 #[cfg(test)]
@@ -387,7 +409,29 @@ Text <!-- one line --> and text <!--
         fs::write(docs.join("log.md"), "# Log\n\n<!--\n### Task name\n-->\n").unwrap();
         fs::write(
             root.path().join("tests/backlog_bundle.py"),
-            "def render_index():\n    pass\n\n# gone() is only mentioned\n",
+            concat!(
+                "\"\"\"\n",
+                "def in_docstring():\n",
+                "\"\"\"\n",
+                "SOURCE = '''\n",
+                "def in_string():\n",
+                "    pass\n",
+                "'''\n",
+                "\n",
+                "def render_index():\n",
+                "    pass\n",
+                "\n",
+                "# gone() is only mentioned\n",
+                "\n",
+                "class Bundle:\n",
+                "    async def method(self):\n",
+                "        def inner():\n",
+                "            pass\n",
+                "\n",
+                "if True:\n",
+                "    def conditional():\n",
+                "        pass\n",
+            ),
         )
         .unwrap();
         root
@@ -412,6 +456,11 @@ Text <!-- one line --> and text <!--
             ("heading by a relative path", "rules.md#what-goes-here"),
             ("a file", "/log.md"),
             ("`render_index`", "../../tests/backlog_bundle.py"),
+            // Defined at any depth
+            ("`Bundle`", "../../tests/backlog_bundle.py"),
+            ("`method`", "../../tests/backlog_bundle.py"),
+            ("`inner`", "../../tests/backlog_bundle.py"),
+            ("`conditional`", "../../tests/backlog_bundle.py"),
             ("a URL is not checked", "https://example.com/okf"),
             ("a scheme with a plus", "coap+tcp://example.com/x"),
             ("mail", "mailto:someone@example.com"),
@@ -431,6 +480,9 @@ Text <!-- one line --> and text <!--
             ),
             // Mentioned in a comment, not defined
             ("`gone`", "../../tests/backlog_bundle.py"),
+            // A def line inside a docstring or a string is text, not a definition
+            ("`in_docstring`", "../../tests/backlog_bundle.py"),
+            ("`in_string`", "../../tests/backlog_bundle.py"),
             // The format guide at the top of the log is an HTML comment, so GitHub gives its headings no anchor
             ("heading inside a comment", "/log.md#task-name"),
             ("only a fragment", "#what-goes-here"),
@@ -450,6 +502,13 @@ Text <!-- one line --> and text <!--
         for ((text, target), why) in bad.iter().zip(&found) {
             assert!(why.is_some(), "{text} ({target}) passed");
         }
+    }
+
+    #[test]
+    fn definitions_after_a_syntax_error_are_read() {
+        // A half-written file still names what it defines below the error
+        let names = python_definitions("def broken(:\n    pass\n\ndef after():\n    pass\n");
+        assert!(names.contains("after"), "{names:?}");
     }
 
     #[test]
