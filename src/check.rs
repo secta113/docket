@@ -4,8 +4,8 @@
 //!   backlog item the log points to exists.
 //! - **`docs/` is one OKF bundle**: every document is a known type in the directory for its type, a spec sits in the
 //!   directory for its status, every index file equals what `docket index` writes, and no spec sits at the root.
-//! - **The log keeps the OKF log structure**: every second-level heading is a date, newest first, and a log
-//!   with entries has one.
+//! - **The log keeps the OKF log structure**: every second-level heading is a date, newest first, and the entries
+//!   are a flat list of list items under those dates.
 //!
 //! Each check has a floor: when the scan finds nothing at all, it fails instead of passing with nothing checked.
 
@@ -44,6 +44,9 @@ static BACKLOG_REF: LazyLock<Regex> =
 static ROOT_SPEC: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)(spec|仕様).*\.md$").unwrap());
 static DATE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\d{4}-\d{2}-\d{2}$").unwrap());
+// A bullet list item, indented by up to 3 spaces as GFM allows
+static LIST_ITEM: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^ {0,3}[*+-](?:[ \t]|$)").unwrap());
 
 /// One broken rule: which check found it, and what is wrong.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -210,9 +213,9 @@ pub fn dangling_backlog_refs(log: &str, names: &[String]) -> Vec<String> {
 
 /// What breaks the log structure, in reading order.
 ///
-/// The floor: a log with entries has a date heading. A new log holds only its title and HTML comments (the format
-/// guide), or nothing, and passes. Anything else visible is an entry, so text alone, or dates at another heading
-/// level, fails instead of passing with no date checked.
+/// Every visible line below the title is a date heading or part of a list item under one. A new log holds only its
+/// title and HTML comments, or nothing, and passes. Anything else visible is checked as an entry, so text alone, or
+/// dates at another heading level, fails instead of passing with no date checked (the floor).
 pub fn log_problems(text: &str) -> Vec<String> {
     let shown = visible(text);
     let mut found = Vec::new();
@@ -247,13 +250,35 @@ pub fn log_problems(text: &str) -> Vec<String> {
     lines.next_if(|line| {
         heading(line).is_some_and(|(level, title)| level == 1 && !DATE.is_match(title))
     });
-    if last.is_none()
-        && let Some(entry) = lines.next()
-    {
-        found.push(format!(
-            "an entry with no ## YYYY-MM-DD heading in the log: {}",
-            entry.trim()
-        ));
+    // OKF 0.2 (section 9): a flat list of entries grouped under the date headings. An entry is a list item; its
+    // indented lines (wrapped text, nested items) belong to it. Anything else, a `### <task>` heading included, is not
+    // an entry
+    let (mut in_group, mut in_item) = (false, false);
+    for line in lines {
+        if let Some((level, _)) = heading(line) {
+            in_item = false;
+            if level == 2 {
+                in_group = true;
+            } else {
+                found.push(format!(
+                    "a heading other than ## YYYY-MM-DD in the log (entries are list items): {}",
+                    line.trim()
+                ));
+            }
+        } else if LIST_ITEM.is_match(line) {
+            in_item = true;
+            if !in_group {
+                found.push(format!(
+                    "an entry outside a ## YYYY-MM-DD group in the log: {}",
+                    line.trim()
+                ));
+            }
+        } else if !(in_item && line.starts_with([' ', '\t'])) {
+            found.push(format!(
+                "not a list entry under a date in the log: {}",
+                line.trim()
+            ));
+        }
     }
     found
 }
@@ -381,7 +406,7 @@ mod tests {
         let good = [
             (
                 "entries",
-                "# Log\n\n<!--\n## YYYY-MM-DD\n-->\n\n## 2026-10-02\n\n### b\n\n## 2026-10-01\n\n### a\n\n```\n## x\n```\n",
+                "# Log\n\n<!--\n## YYYY-MM-DD\n-->\n\n## 2026-10-02\n\n* **b**\n  * **Branch**: main\n    wrapped\n\n## 2026-10-01\n\n- a\n\n  more of a\n\n```\n## x\n```\n",
             ),
             // A new repository has no entries yet: the title and the format guide, or nothing at all
             (
@@ -407,7 +432,20 @@ mod tests {
             ("digits of another script", "## ２０２６-10-01\n"),
             // The floor: text under the title means entries, and entries sit under a date
             ("text without a date", "# Log\n\nNo headings, just text.\n"),
-            ("dates one level up", "# Log\n\n# 2026-10-02\n\n### a\n"),
+            ("dates one level up", "# Log\n\n# 2026-10-02\n\n* a\n"),
+            // OKF 0.2 (section 9): entries are a flat list under the dates, not sections
+            (
+                "a task heading",
+                "## 2026-10-02\n\n### a task\n\n- **Branch**: main\n",
+            ),
+            (
+                "a paragraph under a date",
+                "## 2026-10-02\n\nDid something.\n",
+            ),
+            (
+                "an entry before the first date",
+                "# Log\n\n* early\n\n## 2026-10-02\n\n* a\n",
+            ),
             ("dates one level down", "# Log\n\n### 2026-10-02\n"),
             ("a date for the title", "# 2026-10-02\n"),
             // GFM lets a heading be indented by up to 3 spaces

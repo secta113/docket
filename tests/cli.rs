@@ -46,7 +46,7 @@ fn clean_repo() -> tempfile::TempDir {
     let root = repo();
     fs::write(
         root.path().join("docs/log.md"),
-        "# Log\n\n## 2026-10-02\n\n### Something\n",
+        "# Log\n\n## 2026-10-02\n\n* Something\n",
     )
     .unwrap();
     assert!(
