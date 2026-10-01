@@ -1,0 +1,4 @@
+# The one place that names the packaging tools. The Dockerfile and CI install from this file.
+# maturin builds the wheel; cargo-xwin lets it build the Windows wheel on Linux
+maturin==1.15.0
+cargo-xwin==0.23.1

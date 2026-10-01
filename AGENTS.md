@@ -12,6 +12,8 @@ change**. Where the two disagree, this file wins.
 | `tests/` | Tests that run the built binary as a user runs it |
 | `xtask/` | The CI entry point (`cargo xtask ci`) |
 | `rust-toolchain.toml` | The one place that names the toolchain. The Dockerfile and CI install from it |
+| `pyproject.toml` | The pip package: a wheel that carries only the binary (maturin, `bindings = "bin"`) |
+| `requirements-build.txt` | The one place that names the packaging tools (maturin, cargo-xwin). The Dockerfile and CI install from it |
 
 ## Differences from the shared defaults
 
@@ -27,4 +29,6 @@ change**. Where the two disagree, this file wins.
 - **Build and run CI in the container: `docker compose run --rm dev cargo xtask ci`.** The host is not used for
   builds: on Windows it needs the MSVC linker and the Windows SDK, and CI runs on Linux.
 - **Change the toolchain version only in `rust-toolchain.toml`,** and the base image (`Dockerfile`, the `container`
-  in `.github/workflows/ci.yml`) to the same version.
+  in `.github/workflows/ci.yml`) to the same version. Change the packaging tools only in `requirements-build.txt`.
+- **The host can run the Windows wheel but not build it.** To try a change on Windows, build the wheel in the container
+  (README) and `pip install` it into a venv on the host.

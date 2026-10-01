@@ -9,7 +9,7 @@ so any OKF tool can read them. A port of the record checks in
 [project-template](https://github.com/secta113/project-template), so that a project not written in Python does not
 need Python only for its records.
 
-Work in progress: ported from project-template, not yet packaged for pip.
+Not on PyPI yet. Build the wheels locally (below), then `pip install dist/<wheel>`.
 
 ```sh
 docket --root <repository> check   # check the records
@@ -18,6 +18,13 @@ docket --root <repository> index   # write every index.md from the frontmatter
 
 ## Development
 
+Everything runs in the container (`compose.yaml`), so the host needs only Docker:
+
 ```sh
-docker compose run --rm dev cargo xtask ci
+docker compose run --rm dev cargo xtask ci                                            # format, lint, tests
+docker compose run --rm dev maturin build --release --out dist                        # Linux wheel
+docker compose run --rm dev maturin build --release --target x86_64-pc-windows-msvc --out dist  # Windows wheel
 ```
+
+The Windows wheel is cross-compiled with cargo-xwin, which downloads the MSVC runtime and the Windows SDK under
+Microsoft's license. CI builds and tests it natively on Windows.

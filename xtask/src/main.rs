@@ -21,7 +21,11 @@ const CHECKS: &[(&str, &[&str])] = &[
             "warnings",
         ],
     ),
-    ("Tests (cargo test)", &["test", "--workspace"]),
+    // Every test binary runs even after one fails: by default a failing unit test hides the command-line tests
+    (
+        "Tests (cargo test)",
+        &["test", "--workspace", "--no-fail-fast"],
+    ),
 ];
 
 fn run(cargo: &str, name: &str, args: &[&str]) -> bool {

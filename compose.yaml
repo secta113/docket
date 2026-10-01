@@ -11,9 +11,12 @@ services:
       # output of Linux would mix with the host's
       - cargo-registry:/usr/local/cargo/registry
       - target:/target
+      # The MSVC runtime and the Windows SDK that cargo-xwin downloads, kept between runs
+      - xwin-cache:/root/.cache/cargo-xwin
     environment:
       CARGO_TARGET_DIR: /target
 
 volumes:
   cargo-registry:
   target:
+  xwin-cache:

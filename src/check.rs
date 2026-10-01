@@ -21,7 +21,7 @@ use crate::bundle::{Bundle, Docs, RESERVED, backlog, specs};
 use crate::frontmatter::split;
 use crate::markdown::{broken, links, visible};
 use crate::schema::SPEC_FOLDERS;
-use crate::source::read_source;
+use crate::source::{read_source, relative_path};
 
 /// Directory (relative to docs/, "" for the root) -> the document types allowed in it
 const TYPES: [(&str, &[&str]); 4] = [
@@ -66,12 +66,7 @@ pub fn check(root: &Path) -> io::Result<Vec<Finding>> {
             bundle.docs.join("backlog").join("rules.md"),
         ])
         .filter(|path| !path.exists())
-        .map(|path| {
-            format!(
-                "missing: {}",
-                path.strip_prefix(root).unwrap_or(&path).display()
-            )
-        })
+        .map(|path| format!("missing: {}", relative_path(&path, root)))
         .collect();
     if !missing.is_empty() {
         add("the bundle is seen", missing);
@@ -134,7 +129,7 @@ pub fn check(root: &Path) -> io::Result<Vec<Finding>> {
         .map(|(path, _)| {
             format!(
                 "out of date, run `docket index`: {}",
-                path.strip_prefix(root).unwrap_or(&path).display()
+                relative_path(&path, root)
             )
         })
         .collect();

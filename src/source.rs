@@ -14,9 +14,27 @@ pub fn read_source(path: &Path) -> io::Result<String> {
         .replace('\r', "\n"))
 }
 
+/// The path from the root, for messages: with `/` on every platform, so the output is the same on Windows.
+pub fn relative_path(path: &Path, root: &Path) -> String {
+    let path = path.strip_prefix(root).unwrap_or(path);
+    path.components()
+        .map(|part| part.as_os_str().to_string_lossy())
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_relative_path_uses_slashes() {
+        let root = Path::new("repo");
+        assert_eq!(
+            relative_path(&root.join("docs").join("backlog").join("index.md"), root),
+            "docs/backlog/index.md"
+        );
+    }
 
     #[test]
     fn line_endings_become_lf() {

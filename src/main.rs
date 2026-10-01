@@ -11,6 +11,7 @@ use std::process::ExitCode;
 use chrono::Local;
 use clap::{Parser, Subcommand};
 use docket::bundle::{Bundle, backlog, stale};
+use docket::source::relative_path;
 
 #[derive(Parser)]
 #[command(version, about)]
@@ -76,7 +77,7 @@ fn index(root: &Path) -> Result<(), String> {
     let (files, problems) = bundle.expected().map_err(|e| e.to_string())?;
     for (path, text) in files {
         fs::write(&path, text).map_err(|e| format!("{}: {e}", path.display()))?;
-        println!("wrote {}", relative(&path, root));
+        println!("wrote {}", relative_path(&path, root));
     }
     for (name, why) in problems {
         println!("left out of the index, fix it: {name}: {why}");
@@ -87,13 +88,4 @@ fn index(root: &Path) -> Result<(), String> {
         println!("past stale_after, measure the state again: {name} ({at})");
     }
     Ok(())
-}
-
-/// The path from the root, with `/` on every platform.
-fn relative(path: &Path, root: &Path) -> String {
-    let path = path.strip_prefix(root).unwrap_or(path);
-    path.components()
-        .map(|part| part.as_os_str().to_string_lossy())
-        .collect::<Vec<_>>()
-        .join("/")
 }
