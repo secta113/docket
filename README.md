@@ -100,7 +100,8 @@ stale_after: 2027-01-01T00:00:00+09:00   # optional: when to measure the state a
 - **Every link in `# Details` resolves,** with heading anchors computed as GitHub computes them. A path with a drive
   letter (`C:/...`) fails: it names a file on one machine. Only a URL (`https:`, `mailto:`) is not checked, and a
   file name with a line number (`check.rs:104`) is a path, not a URL. A path is separated with `/`: only Windows
-  reads a backslash as a separator, so a path with one fails.
+  reads a backslash as a separator, so a path with one fails. A link to a `.py` file names, in its text, a function
+  or class defined there.
 - **Every spec keeps the format:** `title`, `description` and `status`, a status that matches its directory, and a
   non-empty `# Resolution` once it is closed.
 - **The log exists, points only at backlog items that exist** (written with `/` or `\`), and its second-level

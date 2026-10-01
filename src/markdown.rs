@@ -125,7 +125,13 @@ pub fn broken(text: &str, target: &str, here: &Path, bundle_root: &Path) -> Opti
         Err(e) => return Some(format!("cannot read {target}: {e}")),
     };
     if path.ends_with(".py") {
-        let name = text.trim().trim_matches('`');
+        let name = text.trim().trim_matches('`').trim();
+        // With no name, the pattern below would match any def
+        if name.is_empty() {
+            return Some(format!(
+                "no function or class named in the link text: {target}"
+            ));
+        }
         // The name has to be defined, not only mentioned: a call or a comment can keep a name after the definition
         // was renamed
         let defined = Regex::new(&format!(
@@ -270,6 +276,9 @@ mod tests {
             ("an existing file and a line", "rules.md:3"),
             // The file exists, but only Windows reads `\` as a separator
             ("backslashes", "..\\log.md"),
+            // A link to a .py file names what it points at; with no name, any def would do
+            ("", "../../tests/backlog_bundle.py"),
+            ("``", "../../tests/backlog_bundle.py"),
         ];
         let found = reasons(root.path(), &bad);
         for ((text, target), why) in bad.iter().zip(&found) {
