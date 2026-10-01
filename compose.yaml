@@ -1,0 +1,19 @@
+# The development environment: `docker compose run --rm dev cargo xtask ci`.
+# Linux, as in GitHub Actions, so a build does not depend on the toolchain of the host (on Windows, the MSVC linker and
+# the Windows SDK).
+services:
+  dev:
+    build: .
+    working_dir: /work
+    volumes:
+      - .:/work
+      # Downloaded crates and build output stay in volumes: writing them through the bind mount is slow, and the build
+      # output of Linux would mix with the host's
+      - cargo-registry:/usr/local/cargo/registry
+      - target:/target
+    environment:
+      CARGO_TARGET_DIR: /target
+
+volumes:
+  cargo-registry:
+  target:

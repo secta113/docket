@@ -1,0 +1,16 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    # The same base image as the Dockerfile. The components come from rust-toolchain.toml, as in the Dockerfile
+    container: rust:1.98.1
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install
+      # The same entry point as on a developer machine
+      - run: cargo xtask ci

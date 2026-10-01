@@ -1,0 +1,4 @@
+# The one place that names the toolchain. The Dockerfile and CI install from this file
+[toolchain]
+channel = "1.98.1"
+components = ["rustfmt", "clippy"]
