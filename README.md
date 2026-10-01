@@ -1,8 +1,25 @@
 # docket
 
-The records an agent works from: a backlog (open defects and postponed work, each with a trigger, a state and a
-deadline), specs, and a log. `docket` checks that they keep their rules and writes their index files, so that whoever
-picks up the work next, an LLM or a person, reads one index instead of every file.
+docket keeps a project's structure from drifting while LLMs and people change it. It keeps two structures:
+
+- **The layers:** which part of the code may import which (`handler`, `application`, `domain`, `infrastructure`,
+  `utils`, and an optional `ui`). docket makes them when a project starts and checks them on every run, so the
+  direction of dependencies stays what it was meant to be.
+- **The specs and records:** what is open, what is agreed, what is finished and why. A backlog (open defects and
+  postponed work, each with a trigger, a state and a deadline), specs, and a log, each kept to strict rules.
+
+## Principles
+
+- **Every rule has a check that can fail.** A rule without a check is only a label, and soon drifts.
+- **A check with nothing to check fails.** A check that passes on an empty tree protects nothing.
+- **The rules come with the tool.** A project pins one version of docket, and takes improvements to the rules by
+  upgrading it, in a commit of its own.
+- **The same structure in every language.** docket is one binary with no language runtime, so a Rust or TypeScript
+  project keeps the same layers and records as a Python one.
+- **Whoever picks up the work next reads one index, not every file.** The index files are generated, never written by
+  hand.
+
+docket checks the records today. Making and checking the layers is not built yet.
 
 The records live in `docs/` and are written in [OKF 0.2](https://github.com/GoogleCloudPlatform/open-knowledge-format),
 so any OKF tool can read them.
