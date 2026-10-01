@@ -10,7 +10,7 @@ jobs:
     # The same base image as the Dockerfile. The components come from rust-toolchain.toml, as in the Dockerfile
     container: rust:1.98.1
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: rustup toolchain install
       # The same entry point as on a developer machine
       - run: cargo xtask ci
@@ -22,10 +22,10 @@ jobs:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: rustup toolchain install
       - run: cargo test --workspace --no-fail-fast
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
       - run: pip install -r requirements-build.txt
@@ -33,7 +33,7 @@ jobs:
       # The wheel installs, and its binary runs, as it will for a user
       - run: pip install --find-links dist docket
       - run: docket --version
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: wheel-${{ matrix.os }}
           path: dist/*.whl
