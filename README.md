@@ -105,10 +105,10 @@ stale_after: 2027-01-01T00:00:00+09:00   # optional: when to measure the state a
   or class defined there.
 - **Every spec keeps the format:** `title`, `description` and `status`, a status that matches its directory, and a
   non-empty `# Resolution` once it is closed.
-- **The log exists, points only at backlog items that exist** (written with `/` or `\`), and its second-level
-  headings are dates, newest first. Anything visible besides the title is an entry, and entries need a date
-  heading: a new log, with only its title and HTML comments, passes; text alone, or dates at another heading level,
-  fails.
+- **The log exists, points only at backlog items that exist** (`backlog/<slug>.md`, written with `/` or `\`, the
+  slug percent-encoded or not), and its second-level headings are dates, newest first. Anything visible besides the
+  title is an entry, and entries need a date heading: a new log, with only its title and HTML comments, passes;
+  text alone, or dates at another heading level, fails.
 - **Every document is a known type in its directory.**
 - **Every index file equals what `docket index` writes.** Nobody maintains a list by hand.
 - **No spec sits at the repository root.**

@@ -16,6 +16,7 @@ use std::path::Path;
 use std::sync::LazyLock;
 
 use chrono::NaiveDate;
+use percent_encoding::percent_decode_str;
 use regex::Regex;
 
 use crate::bundle::{Bundle, Docs, RESERVED, backlog, specs};
@@ -34,9 +35,11 @@ const TYPES: [(&str, &[&str]); 4] = [
 
 // How the log points to a backlog item. Matched without `docs/`, so pointers written while the backlog was at the
 // repository root (`backlog/<slug>.md`) still match an item by its slug. A pointer written with Windows separators
-// (`docs\backlog\<slug>.md`) is a pointer too, and has to name an item that exists
+// (`docs\backlog\<slug>.md`) is a pointer too, and has to name an item that exists. So is a link that percent-encodes
+// the slug (`backlog/%E6%97%A5.md`). A path without `.md` is not taken for a pointer: in prose, `backlog/` is also
+// followed by words that name no file
 static BACKLOG_REF: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"backlog[/\\]([\w.-]+\.md)").unwrap());
+    LazyLock::new(|| Regex::new(r"backlog[/\\]([\w.%-]+\.md)").unwrap());
 // A file at the repository root with one of these names is taken for a spec
 static ROOT_SPEC: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)(spec|仕様).*\.md$").unwrap());
@@ -194,7 +197,11 @@ pub fn unresolved(details: &BTreeMap<String, String>, root: &Path) -> BTreeMap<S
 pub fn dangling_backlog_refs(log: &str, names: &[String]) -> Vec<String> {
     let mut dangling: Vec<String> = BACKLOG_REF
         .captures_iter(log)
-        .map(|caps| caps[1].to_string())
+        .map(|caps| {
+            percent_decode_str(&caps[1])
+                .decode_utf8_lossy()
+                .into_owned()
+        })
         .filter(|name| !names.contains(name))
         .collect();
     dangling.sort();
@@ -358,11 +365,13 @@ mod tests {
     fn a_dangling_log_pointer_is_caught() {
         let log = "## 2026-10-01\n\n### Something\n- **Open items**: docs/backlog/rules.md, \
                    docs/backlog/no-such-item.md, backlog/rules.md, docs\\backlog\\rules.md, \
-                   docs\\backlog\\written-on-windows.md\n";
-        let names = vec!["rules.md".to_string(), "index.md".to_string()];
+                   docs\\backlog\\written-on-windows.md, [日](/backlog/%E6%97%A5.md), \
+                   [月](/backlog/%E6%9C%88.md)\n";
+        let names = ["rules.md", "index.md", "日.md"].map(String::from).to_vec();
+        // A link to a slug outside ASCII is percent-encoded, and points at the item all the same
         assert_eq!(
             dangling_backlog_refs(log, &names),
-            ["no-such-item.md", "written-on-windows.md"]
+            ["no-such-item.md", "written-on-windows.md", "月.md"]
         );
     }
 
