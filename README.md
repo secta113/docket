@@ -25,6 +25,15 @@ docket --root <repository> index   # write every index.md from the frontmatter
 
 `--root` defaults to the current directory. The records are read from `<repository>/docs`.
 
+The index files only help if your agent reads them. Point it at them in your `AGENTS.md` (or whatever file your agent
+reads first), for example:
+
+```markdown
+- **Before starting work, read `docs/backlog/index.md` and `docs/specs/index.md`, and open only the items and specs
+  that concern the work.** Read `docs/done/index.md` and `docs/log.md` when you need to know why something was
+  decided.
+```
+
 ## The records
 
 ```
