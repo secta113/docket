@@ -14,8 +14,9 @@ use crate::markdown::{heading, visible};
 /// one starts no section, and a section that holds only one is empty.
 pub type Sections = BTreeMap<String, String>;
 
+// The closing `---` is on its own line: followed by a newline, or by the end of a file with no body
 static FRONT_MATTER: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?s)\A---\n(.*?)\n---\n(.*)\z").unwrap());
+    LazyLock::new(|| Regex::new(r"(?s)\A---\n(.*?)\n---(?:\n(.*))?\z").unwrap());
 
 /// The frontmatter, and the text under each `# heading` of the body.
 ///
@@ -33,7 +34,7 @@ pub fn split(text: &str) -> Result<(Hash, Sections), String> {
     };
     let mut lines: BTreeMap<String, Vec<&str>> = BTreeMap::new();
     let mut current: Option<String> = None;
-    let body = visible(&caps[2]);
+    let body = visible(caps.get(2).map_or("", |body| body.as_str()));
     for line in body.split('\n') {
         if let Some((1, heading)) = heading(line) {
             let name = heading.to_string();
@@ -82,6 +83,13 @@ mod tests {
     }
 
     #[test]
+    fn a_file_that_ends_at_the_closing_line_has_frontmatter() {
+        let (meta, sections) = split("---\ntype: X\n---").unwrap();
+        assert_eq!(meta[&Yaml::String("type".into())], Yaml::String("X".into()));
+        assert!(sections.is_empty());
+    }
+
+    #[test]
     fn crlf_is_read_as_lf() {
         assert!(split("---\r\ntype: X\r\n---\r\n# A\r\nb\r\n").is_ok());
     }
@@ -91,6 +99,9 @@ mod tests {
         let bad = [
             "# no frontmatter\n",
             "---\n---\n",
+            // The closing line is `---` alone, not the start of a longer line
+            "---\ntype: X\n----\n",
+            "---\ntype: X\n---x",
             "---\n- a list\n---\n",
             "---\njust text\n---\n",
             // In YAML, a colon followed by a space starts a mapping, so an unquoted one breaks a text field
