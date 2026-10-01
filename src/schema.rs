@@ -32,9 +32,19 @@ pub const SPEC_FOLDERS: [(&str, &[Status]); 2] = [
 static ACTOR: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^(?:human:\S+|process:\S+|[^\s:/]+/\S+)$").unwrap());
 // A deadline that is only a date or a datetime. Deadlines are events, and the reason for having none is not a date
-// either. The check does not depend on the language of the content, which is left to the project
+// either. Only the notation of the date is read, not the words around it, so an event in any language passes: the
+// language of the content is left to the project
 static DATE_ONLY: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^\s*\d{4}-\d{2}-\d{2}(?:[T ][\d:.]+(?:Z|[+-]\d{2}:?\d{2})?)?\s*$").unwrap()
+    Regex::new(
+        r"(?x)^\s*(?:
+            \d{4}-\d{1,2}(?:-\d{1,2})?            # 2026-10-31, 2026-10
+          | \d{4}/\d{1,2}(?:/\d{1,2})?            # 2026/10/31, 2026/10
+          | \d{4}\.\d{1,2}\.\d{1,2}                # 2026.10.31 (2026.10 alone reads as a version)
+          | \d{1,2}[-/.]\d{1,2}[-/.]\d{4}          # 31.10.2026, 10/31/2026
+          | \d{4}\s*年\s*\d{1,2}\s*月(?:\s*\d{1,2}\s*日)?  # 2026年10月31日, 2026年10月
+        )(?:[T\ ][\d:.]+(?:Z|[+-]\d{2}:?\d{2})?)?\s*$",
+    )
+    .unwrap()
 });
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -549,6 +559,21 @@ Not yet.
                     "deadline: 次のデプロイまで",
                 ),
             ),
+            // An event may carry a date; only a date alone is not an event
+            (
+                "an event with a date in it",
+                good(
+                    "deadline: until the next deploy",
+                    "deadline: until the release planned for 2026/10/31",
+                ),
+            ),
+            (
+                "an event with a Japanese date in it",
+                good(
+                    "deadline: until the next deploy",
+                    "deadline: 2026年10月31日のリリースまで",
+                ),
+            ),
             // Quoting does not change a value (YAML 1.2). PyYAML read a quoted datetime as a string, and it failed
             (
                 "a quoted datetime",
@@ -617,6 +642,41 @@ Not yet.
                 good(
                     "deadline: until the next deploy",
                     "deadline: \"2026-12-31T00:00:00+09:00\"",
+                ),
+            ),
+            // A date in another notation is still only a date
+            (
+                "deadline is a date with slashes",
+                good("deadline: until the next deploy", "deadline: 2026/10/31"),
+            ),
+            (
+                "deadline is a date with dots, day first",
+                good("deadline: until the next deploy", "deadline: 31.10.2026"),
+            ),
+            (
+                "deadline is a date, month first",
+                good("deadline: until the next deploy", "deadline: 10/31/2026"),
+            ),
+            (
+                "deadline is a month",
+                good("deadline: until the next deploy", "deadline: 2026-10"),
+            ),
+            (
+                "deadline is a date in Japanese",
+                good(
+                    "deadline: until the next deploy",
+                    "deadline: 2026年10月31日",
+                ),
+            ),
+            (
+                "deadline is a month in Japanese",
+                good("deadline: until the next deploy", "deadline: 2026年10月"),
+            ),
+            (
+                "deadline is a date and a time with slashes",
+                good(
+                    "deadline: until the next deploy",
+                    "deadline: \"2026/10/31 18:00\"",
                 ),
             ),
             // The reason for having no deadline is not a date either
