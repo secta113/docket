@@ -18,6 +18,8 @@ static HEADING: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?m)^#{1,6}[ \t]+(.+?)[ \t]*$").unwrap());
 static LINK: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\[([^\]]*)\]\(([^)\s]+)\)").unwrap());
 static URL: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[A-Za-z][A-Za-z0-9+.-]*:").unwrap());
+// A drive letter has the form of a one-letter URL scheme. No scheme has one letter
+static DRIVE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[A-Za-z]:").unwrap());
 
 /// The text without the parts that are not rendered.
 pub fn visible(text: &str) -> String {
@@ -87,8 +89,15 @@ pub fn links(text: &str) -> Vec<(String, String)> {
 /// Why the link does not resolve, or `None` when it does.
 ///
 /// `here` is the directory of the document that holds the link, for relative targets. A target starting with `/` is
-/// relative to `bundle_root`. A URL is not checked. A link to a `.py` file names a function or class in its text.
+/// relative to `bundle_root`. A URL is not checked. A path with a drive letter (`C:/...`) fails: it names a file on one
+/// machine, which no other checkout and no reader on GitHub can follow. A link to a `.py` file names a function or
+/// class in its text.
 pub fn broken(text: &str, target: &str, here: &Path, bundle_root: &Path) -> Option<String> {
+    if DRIVE.is_match(target) {
+        return Some(format!(
+            "a path on one machine; link with / from the bundle root, or with a relative path: {target}"
+        ));
+    }
     if URL.is_match(target) {
         return None;
     }
@@ -243,6 +252,9 @@ mod tests {
             // The format guide at the top of the log is an HTML comment, so GitHub gives its headings no anchor
             ("heading inside a comment", "/log.md#task-name"),
             ("only a fragment", "#what-goes-here"),
+            // A drive letter is not a URL scheme: the path names a file on one machine
+            ("drive letter", "C:/no/such/file.md"),
+            ("drive letter with backslashes", "c:\\no\\such\\file.md"),
         ];
         let found = reasons(root.path(), &bad);
         for ((text, target), why) in bad.iter().zip(&found) {

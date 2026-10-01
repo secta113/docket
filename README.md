@@ -96,7 +96,8 @@ stale_after: 2027-01-01T00:00:00+09:00   # optional: when to measure the state a
 - **Every backlog item keeps the format:** the fields above with their types, no unknown field, and non-empty
   Trigger, State and Details (and Resolution when closed). A deadline is an event or a reason, never only a date.
   Every time has a time zone. `stale_after` is later than the last `verified`.
-- **Every link in `# Details` resolves,** with heading anchors computed as GitHub computes them.
+- **Every link in `# Details` resolves,** with heading anchors computed as GitHub computes them. A path with a drive
+  letter (`C:/...`) fails: it names a file on one machine.
 - **Every spec keeps the format:** `title`, `description` and `status`, a status that matches its directory, and a
   non-empty `# Resolution` once it is closed.
 - **The log exists, points only at backlog items that exist,** and its second-level headings are dates, newest
