@@ -21,8 +21,11 @@ docket keeps a project's structure from drifting while LLMs and people change it
 
 docket checks the records today. Making and checking the layers is not built yet.
 
-The records live in `docs/` and are written in [OKF 0.2](https://github.com/GoogleCloudPlatform/open-knowledge-format),
-so any OKF tool can read them.
+The records live in `docs/`, which is a bundle in [OKF 0.2](https://github.com/GoogleCloudPlatform/open-knowledge-format)
+(its `SPEC.md` as of commit `ad30107`): every document has YAML frontmatter with a `type`, `index.md` and `log.md` are
+reserved names, and the log's headings are dates. An OKF reader can read the records as a bundle. The rules on top of
+that format (a backlog item's trigger, state and deadline, a spec's status and directory, the shape of a log entry)
+are docket's own, stricter than OKF, and not part of it. docket is not an OKF validator.
 
 ## Install
 
