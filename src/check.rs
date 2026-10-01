@@ -12,7 +12,7 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
 use chrono::NaiveDate;
@@ -116,9 +116,11 @@ pub fn check(root: &Path) -> io::Result<Vec<Finding>> {
         );
     }
 
+    let mut out_of_place = misplaced(&concepts(&bundle.docs)?);
+    out_of_place.extend(unread(&bundle.docs)?);
     add(
         "every document is a known type in its place",
-        pairs(&misplaced(&concepts(&bundle.docs)?)),
+        pairs(&out_of_place),
     );
     for (folder, _) in SPEC_FOLDERS {
         let (_, bad) = specs(folder, &bundle.read_folder(folder)?);
@@ -286,19 +288,72 @@ pub fn log_problems(text: &str) -> Vec<String> {
 /// Every document under `docs/`: path relative to `docs/` (with `/`) -> text.
 pub fn concepts(docs: &Path) -> io::Result<Docs> {
     let mut out = Docs::new();
-    walk(docs, "", &mut out)?;
+    for (path, full) in files(docs)? {
+        let name = file_name(&path);
+        if name.ends_with(".md") && !RESERVED.contains(&name) {
+            out.insert(path, read_source(&full)?);
+        }
+    }
     Ok(out)
 }
 
-fn walk(dir: &Path, prefix: &str, out: &mut Docs) -> io::Result<()> {
+/// Path -> why, for the files under `docs/` that a reader takes for part of the bundle and docket would not read.
+///
+/// A reserved name (OKF 0.2, section 3.1) is read only where docket writes or reads it: an `index.md` in a directory
+/// that holds documents, and `log.md` at the root. Anywhere else, OKF says it follows the structure of an index or a
+/// log, and nothing would check that. A markdown file whose extension is not `.md` in lowercase (`.MD`) is shown by
+/// GitHub, but not read as a document, so a broken one would pass.
+pub fn unread(docs: &Path) -> io::Result<BTreeMap<String, String>> {
+    let mut bad = BTreeMap::new();
+    for (path, _) in files(docs)? {
+        let name = file_name(&path);
+        let folder = path.rsplit_once('/').map_or("", |(folder, _)| folder);
+        let read = match name {
+            "index.md" => TYPES.iter().any(|(known, _)| *known == folder),
+            "log.md" => folder.is_empty(),
+            _ => true,
+        };
+        if !read {
+            bad.insert(
+                path,
+                "a reserved name outside the places docket writes and reads (index.md in docs/ and in each directory \
+                 of documents, log.md in docs/)"
+                    .into(),
+            );
+        } else if !name.ends_with(".md")
+            && name
+                .rsplit_once('.')
+                .is_some_and(|(_, ext)| ext.eq_ignore_ascii_case("md"))
+        {
+            bad.insert(
+                path,
+                "a markdown file is named with .md, in lowercase".into(),
+            );
+        }
+    }
+    Ok(bad)
+}
+
+fn file_name(path: &str) -> &str {
+    path.rsplit_once('/').map_or(path, |(_, name)| name)
+}
+
+/// Every file under `dir`: path relative to `dir` (with `/`) -> full path.
+fn files(dir: &Path) -> io::Result<Vec<(String, PathBuf)>> {
+    let mut out = Vec::new();
+    walk(dir, "", &mut out)?;
+    Ok(out)
+}
+
+fn walk(dir: &Path, prefix: &str, out: &mut Vec<(String, PathBuf)>) -> io::Result<()> {
     for entry in fs::read_dir(dir)? {
         let entry = entry?;
         let name = entry.file_name().to_string_lossy().into_owned();
         let path = format!("{prefix}{name}");
         if entry.file_type()?.is_dir() {
             walk(&entry.path(), &format!("{path}/"), out)?;
-        } else if name.ends_with(".md") && !RESERVED.contains(&name.as_str()) {
-            out.insert(path, read_source(&entry.path())?);
+        } else {
+            out.push((path, entry.path()));
         }
     }
     Ok(())
@@ -494,6 +549,51 @@ mod tests {
             found.keys().collect::<Vec<_>>(),
             bad.keys().collect::<Vec<_>>()
         );
+    }
+
+    /// A `docs/` with the given files, each empty.
+    fn docs_with(paths: &[&str]) -> tempfile::TempDir {
+        let root = tempfile::tempdir().unwrap();
+        for path in paths {
+            let full = root.path().join(path);
+            fs::create_dir_all(full.parent().unwrap()).unwrap();
+            fs::write(full, "").unwrap();
+        }
+        root
+    }
+
+    #[test]
+    fn the_files_docket_reads_pass() {
+        let docs = docs_with(&[
+            "index.md",
+            "log.md",
+            "backlog/index.md",
+            "backlog/item.md",
+            "specs/index.md",
+            "done/index.md",
+            "assets/diagram.png",
+        ]);
+        assert_eq!(unread(docs.path()).unwrap(), BTreeMap::new());
+    }
+
+    #[test]
+    fn a_file_docket_would_not_read_is_caught() {
+        let bad = [
+            // Reserved names where docket neither writes nor reads them
+            "extra/index.md",
+            "specs/deeper/index.md",
+            "backlog/log.md",
+            // Markdown that is not named .md
+            "backlog/item.MD",
+            "notes.Md",
+        ];
+        let docs = docs_with(&bad);
+        let found = unread(docs.path()).unwrap();
+        assert_eq!(found.keys().collect::<Vec<_>>(), {
+            let mut sorted = bad.to_vec();
+            sorted.sort();
+            sorted
+        });
     }
 
     #[test]

@@ -113,6 +113,9 @@ stale_after: 2027-01-01T00:00:00+09:00   # optional: when to measure the state a
   first date fails. A new log, with only its title and HTML comments, passes.
 - **Every document is a known type in its directory.** The fields OKF defines for a document pass as OKF writes them
   (`generated` needs only `by`; every entry of `sources` needs a `resource`; `usage_window` is a `{from, to}` range).
+  The names OKF reserves appear only where docket writes and reads them: `index.md` in `docs/` and in each directory
+  of documents, `log.md` in `docs/`. A markdown file is named `.md`, in lowercase: GitHub shows a `.MD` file, but
+  docket would not read it.
 - **Every index file equals what `docket index` writes.** Nobody maintains a list by hand.
 - **No spec sits at the repository root.**
 
