@@ -39,17 +39,35 @@ fn main() -> ExitCode {
         return ExitCode::from(2);
     }
     let result = match cli.command {
-        // Not implemented yet, so it fails: a stub that exits 0 would look like a passing check
-        Command::Check => Err("not implemented yet".to_string()),
-        Command::Index => index(&cli.root),
+        Command::Check => check(&cli.root),
+        Command::Index => index(&cli.root).map(|()| true),
     };
     match result {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(true) => ExitCode::SUCCESS,
+        // A broken rule: 1. A file that could not be read or written: 2
+        Ok(false) => ExitCode::FAILURE,
         Err(why) => {
             eprintln!("{why}");
             ExitCode::from(2)
         }
     }
+}
+
+/// Print every broken rule under the check that found it. `true` when there are none.
+fn check(root: &Path) -> Result<bool, String> {
+    let found = docket::check::check(root).map_err(|e| e.to_string())?;
+    let mut last = "";
+    for finding in &found {
+        if finding.check != last {
+            println!("{}:", finding.check);
+            last = finding.check;
+        }
+        println!("  {}", finding.detail);
+    }
+    if found.is_empty() {
+        println!("every record keeps the rules");
+    }
+    Ok(found.is_empty())
 }
 
 /// Write every index file, then list what was left out of them and the items to measure again.

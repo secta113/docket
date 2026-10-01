@@ -1,0 +1,409 @@
+//! `docket check`: every rule of the records, run against one repository.
+//!
+//! - **The backlog works as a backlog**: every document keeps the format, every link in `# Details` resolves, and every
+//!   backlog item the log points to exists.
+//! - **`docs/` is one OKF bundle**: every document is a known type in the directory for its type, a spec sits in the
+//!   directory for its status, every index file equals what `docket index` writes, and no spec sits at the root.
+//! - **The log keeps the OKF log structure**: every second-level heading is a date, newest first.
+//!
+//! Each check has a floor: when the scan finds nothing at all, it fails instead of passing with nothing checked.
+
+use std::collections::BTreeMap;
+use std::fs;
+use std::io;
+use std::path::Path;
+use std::sync::LazyLock;
+
+use chrono::NaiveDate;
+use regex::Regex;
+
+use crate::bundle::{Bundle, Docs, RESERVED, backlog, specs};
+use crate::frontmatter::split;
+use crate::markdown::{broken, links, visible};
+use crate::schema::SPEC_FOLDERS;
+use crate::source::read_source;
+
+/// Directory (relative to docs/, "" for the root) -> the document types allowed in it
+const TYPES: [(&str, &[&str]); 4] = [
+    ("", &["Guide"]),
+    ("backlog", &["Backlog Item", "Guide"]),
+    ("specs", &["Spec"]),
+    ("done", &["Spec"]),
+];
+
+// How the log points to a backlog item. Matched without `docs/`, so pointers written while the backlog was at the
+// repository root (`backlog/<slug>.md`) still match an item by its slug
+static BACKLOG_REF: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"backlog/([\w.-]+\.md)").unwrap());
+// A file at the repository root with one of these names is taken for a spec
+static ROOT_SPEC: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)(spec|仕様).*\.md$").unwrap());
+static LOG_HEADING: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?m)^## (.*)$").unwrap());
+static DATE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\d{4}-\d{2}-\d{2}$").unwrap());
+
+/// One broken rule: which check found it, and what is wrong.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Finding {
+    pub check: &'static str,
+    pub detail: String,
+}
+
+/// Every broken rule in the repository at `root`. An error is a file that could not be read at all.
+pub fn check(root: &Path) -> io::Result<Vec<Finding>> {
+    let bundle = Bundle::new(root);
+    let mut found = Vec::new();
+    let mut add = |check: &'static str, details: Vec<String>| {
+        found.extend(details.into_iter().map(|detail| Finding { check, detail }));
+    };
+
+    // The floor: the directories and the root index exist, and the backlog rules are found as a document. If a move
+    // or a rename makes the scan come back empty, the checks below see nothing and pass
+    let missing: Vec<String> = TYPES
+        .iter()
+        .map(|(folder, _)| bundle.docs.join(folder))
+        .chain([
+            bundle.docs.join("index.md"),
+            bundle.docs.join("backlog").join("rules.md"),
+        ])
+        .filter(|path| !path.exists())
+        .map(|path| {
+            format!(
+                "missing: {}",
+                path.strip_prefix(root).unwrap_or(&path).display()
+            )
+        })
+        .collect();
+    if !missing.is_empty() {
+        add("the bundle is seen", missing);
+        return Ok(found);
+    }
+
+    let docs = bundle.read_folder("backlog")?;
+    let parsed = backlog(&docs);
+    add(
+        "every backlog document keeps the format",
+        pairs(&parsed.problems),
+    );
+    let details: BTreeMap<String, String> = parsed
+        .items
+        .iter()
+        .map(|(name, (_, sections))| (name.clone(), sections["Details"].clone()))
+        .collect();
+    add(
+        "every link in # Details resolves",
+        pairs(&unresolved(&details, root)),
+    );
+
+    let log_path = bundle.docs.join("log.md");
+    if log_path.is_file() {
+        let log = read_source(&log_path)?;
+        let names = file_names(&bundle.docs.join("backlog"))?;
+        let dangling = dangling_backlog_refs(&log, &names);
+        add(
+            "the log points only at real backlog items",
+            dangling
+                .into_iter()
+                .map(|name| format!("no such item: docs/backlog/{name}"))
+                .collect(),
+        );
+        add("the log keeps its structure", log_problems(&log));
+    } else {
+        add(
+            "the log keeps its structure",
+            vec!["missing: docs/log.md".into()],
+        );
+    }
+
+    add(
+        "every document is a known type in its place",
+        pairs(&misplaced(&concepts(&bundle.docs)?)),
+    );
+    for (folder, _) in SPEC_FOLDERS {
+        let (_, bad) = specs(folder, &bundle.read_folder(folder)?);
+        add(
+            "every spec keeps the format",
+            bad.into_iter()
+                .map(|(name, why)| format!("{folder}/{name}: {why}"))
+                .collect(),
+        );
+    }
+    let (files, _) = bundle.expected()?;
+    let stale: Vec<String> = files
+        .into_iter()
+        .filter(|(path, text)| read_source(path).ok().as_ref() != Some(text))
+        .map(|(path, _)| {
+            format!(
+                "out of date, run `docket index`: {}",
+                path.strip_prefix(root).unwrap_or(&path).display()
+            )
+        })
+        .collect();
+    add("every index is up to date", stale);
+    let names = file_names(root)?;
+    add(
+        "no spec sits at the repository root",
+        root_specs(&names)
+            .into_iter()
+            .map(|name| format!("specs go in docs/specs/ or docs/done/: {name}"))
+            .collect(),
+    );
+    Ok(found)
+}
+
+/// Every name in a directory: files, directories and the rest.
+fn file_names(dir: &Path) -> io::Result<Vec<String>> {
+    fs::read_dir(dir)?
+        .map(|entry| entry.map(|entry| entry.file_name().to_string_lossy().into_owned()))
+        .collect()
+}
+
+fn pairs(problems: &BTreeMap<String, String>) -> Vec<String> {
+    problems
+        .iter()
+        .map(|(name, why)| format!("{name}: {why}"))
+        .collect()
+}
+
+/// Item -> why, for the Details sections with no link or with a link that does not resolve. `root` is the root of the
+/// repository.
+///
+/// Details sit in a backlog item (`docs/backlog/<slug>.md`), so relative links resolve from there and links starting
+/// with `/` from the bundle root (`docs/`).
+pub fn unresolved(details: &BTreeMap<String, String>, root: &Path) -> BTreeMap<String, String> {
+    let bundle_root = root.join("docs");
+    let here = bundle_root.join("backlog");
+    let mut bad = BTreeMap::new();
+    for (name, detail) in details {
+        let found = links(detail);
+        if found.is_empty() {
+            bad.insert(name.clone(), format!("no markdown link: {detail}"));
+            continue;
+        }
+        let reasons: Vec<String> = found
+            .iter()
+            .filter_map(|(text, target)| broken(text, target, &here, &bundle_root))
+            .collect();
+        if !reasons.is_empty() {
+            bad.insert(
+                name.clone(),
+                format!("links that do not resolve: {reasons:?}"),
+            );
+        }
+    }
+    bad
+}
+
+/// The `docs/backlog/<slug>.md` the log points to that are not among `names` (the file names in `docs/backlog/`).
+pub fn dangling_backlog_refs(log: &str, names: &[String]) -> Vec<String> {
+    let mut dangling: Vec<String> = BACKLOG_REF
+        .captures_iter(log)
+        .map(|caps| caps[1].to_string())
+        .filter(|name| !names.contains(name))
+        .collect();
+    dangling.sort();
+    dangling.dedup();
+    dangling
+}
+
+/// What breaks the log structure, in reading order.
+pub fn log_problems(text: &str) -> Vec<String> {
+    let mut found = Vec::new();
+    let mut last: Option<NaiveDate> = None;
+    for caps in LOG_HEADING.captures_iter(&visible(text)) {
+        let heading = &caps[1];
+        let day = DATE
+            .is_match(heading)
+            .then(|| NaiveDate::parse_from_str(heading, "%Y-%m-%d").ok())
+            .flatten();
+        let Some(day) = day else {
+            found.push(format!("not a YYYY-MM-DD date heading: ## {heading}"));
+            continue;
+        };
+        if let Some(previous) = last
+            && day >= previous
+        {
+            found.push(format!(
+                "not newest first: ## {heading} comes after ## {previous}"
+            ));
+        }
+        last = Some(day);
+    }
+    found
+}
+
+/// Every document under `docs/`: path relative to `docs/` (with `/`) -> text.
+pub fn concepts(docs: &Path) -> io::Result<Docs> {
+    let mut out = Docs::new();
+    walk(docs, "", &mut out)?;
+    Ok(out)
+}
+
+fn walk(dir: &Path, prefix: &str, out: &mut Docs) -> io::Result<()> {
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let path = format!("{prefix}{name}");
+        if entry.file_type()?.is_dir() {
+            walk(&entry.path(), &format!("{path}/"), out)?;
+        } else if name.ends_with(".md") && !RESERVED.contains(&name.as_str()) {
+            out.insert(path, read_source(&entry.path())?);
+        }
+    }
+    Ok(())
+}
+
+/// Path -> why the document is not a known type in its directory.
+pub fn misplaced(docs: &Docs) -> BTreeMap<String, String> {
+    let mut bad = BTreeMap::new();
+    for (path, text) in docs {
+        let folder = path.rsplit_once('/').map_or("", |(folder, _)| folder);
+        let kind = match split(text) {
+            Ok((meta, _)) => match meta.get(&yaml_rust2::Yaml::String("type".into())) {
+                Some(yaml_rust2::Yaml::String(kind)) => Some(kind.clone()),
+                _ => None,
+            },
+            Err(why) => {
+                bad.insert(path.clone(), why);
+                continue;
+            }
+        };
+        match TYPES.iter().find(|(name, _)| *name == folder) {
+            None => {
+                bad.insert(
+                    path.clone(),
+                    format!("no document belongs in docs/{folder}/"),
+                );
+            }
+            Some((_, allowed)) if !kind.as_deref().is_some_and(|kind| allowed.contains(&kind)) => {
+                let shown = if folder.is_empty() { "." } else { folder };
+                bad.insert(
+                    path.clone(),
+                    format!(
+                        "type {kind:?} does not belong in docs/{shown} ({})",
+                        allowed.join(", ")
+                    ),
+                );
+            }
+            Some(_) => {}
+        }
+    }
+    bad
+}
+
+/// The names that look like a spec, among the files at the repository root.
+pub fn root_specs(names: &[String]) -> Vec<String> {
+    let mut found: Vec<String> = names
+        .iter()
+        .filter(|name| ROOT_SPEC.is_match(name))
+        .cloned()
+        .collect();
+    found.sort();
+    found
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn map(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn a_details_section_without_a_link_is_caught() {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir_all(root.path().join("docs/backlog")).unwrap();
+        fs::write(root.path().join("docs/log.md"), "# Log\n").unwrap();
+        let details = map(&[
+            ("linked.md", "[log](/log.md)"),
+            ("no link (the old form).md", "docs/log.md「somewhere」"),
+            (
+                "only the second link is broken.md",
+                "[a](/log.md), [b](/no_such_file.md)",
+            ),
+        ]);
+        let bad = unresolved(&details, root.path());
+        assert_eq!(
+            bad.keys().collect::<Vec<_>>(),
+            [
+                "no link (the old form).md",
+                "only the second link is broken.md"
+            ]
+        );
+    }
+
+    #[test]
+    fn a_dangling_log_pointer_is_caught() {
+        let log = "## 2026-10-01\n\n### Something\n- **Open items**: docs/backlog/rules.md, \
+                   docs/backlog/no-such-item.md, backlog/rules.md\n";
+        let names = vec!["rules.md".to_string(), "index.md".to_string()];
+        assert_eq!(dangling_backlog_refs(log, &names), ["no-such-item.md"]);
+    }
+
+    #[test]
+    fn the_log_structure_is_checked() {
+        let good = "# Log\n\n<!--\n## YYYY-MM-DD\n-->\n\n## 2026-10-02\n\n### b\n\n## 2026-10-01\n\n### a\n\n```\n## x\n```\n";
+        assert_eq!(log_problems(good), Vec::<String>::new());
+        let bad = [
+            ("task on the date line", "## 2026-10-01 a task\n"),
+            ("not a real date", "## 2026-13-01\n"),
+            ("oldest first", "## 2026-10-01\n\n## 2026-10-02\n"),
+            ("same date twice", "## 2026-10-01\n\n## 2026-10-01\n"),
+            ("digits of another script", "## ２０２６-10-01\n"),
+        ];
+        for (name, text) in bad {
+            assert!(!log_problems(text).is_empty(), "{name}");
+        }
+    }
+
+    const SPEC: &str = "---\ntype: Spec\ntitle: Something\ndescription: One sentence.\nstatus: stable\n---\n\n# Goals\n";
+
+    #[test]
+    fn a_known_type_in_its_place_passes() {
+        let docs = map(&[
+            ("specs/good.md", SPEC),
+            ("backlog/rules.md", "---\ntype: Guide\n---\n"),
+            ("guide.md", "---\ntype: Guide\n---\n"),
+        ]);
+        assert_eq!(misplaced(&docs), BTreeMap::new());
+    }
+
+    #[test]
+    fn a_misplaced_document_is_caught() {
+        let item = "---\ntype: Backlog Item\n---\n";
+        let bad = map(&[
+            ("specs/item.md", item),
+            ("item.md", item),
+            ("other/x.md", SPEC),
+            ("backlog/plain.md", "# Just markdown\n"),
+            ("backlog/no-type.md", "---\ntitle: x\n---\n"),
+            ("specs/deeper/x.md", SPEC),
+        ]);
+        let found = misplaced(&bad);
+        assert_eq!(
+            found.keys().collect::<Vec<_>>(),
+            bad.keys().collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn a_root_spec_is_caught() {
+        let names: Vec<String> = [
+            "README.md",
+            "AGENTS.md",
+            "genre_spec.md",
+            "仕様書.md",
+            "pyproject.toml",
+            "SPEC.MD",
+        ]
+        .map(String::from)
+        .into();
+        assert_eq!(
+            root_specs(&names),
+            ["SPEC.MD", "genre_spec.md", "仕様書.md"]
+        );
+    }
+}

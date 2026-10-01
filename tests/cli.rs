@@ -41,11 +41,101 @@ fn a_missing_root_fails() {
     assert!(String::from_utf8_lossy(&out.stderr).contains("not a directory"));
 }
 
-#[test]
-fn an_unimplemented_command_fails() {
+/// A repository that keeps every rule: the bundle, a log, and the index files written by `docket index`.
+fn clean_repo() -> tempfile::TempDir {
     let root = repo();
+    fs::write(
+        root.path().join("docs/log.md"),
+        "# Log\n\n## 2026-10-02\n\n### Something\n",
+    )
+    .unwrap();
+    assert!(
+        run(&["--root", &root_arg(root.path()), "index"])
+            .status
+            .success()
+    );
+    root
+}
+
+#[test]
+fn a_clean_repository_passes() {
+    let root = clean_repo();
     let out = run(&["--root", &root_arg(root.path()), "check"]);
-    assert!(!out.status.success(), "check passed with nothing checked");
+    assert!(out.status.success(), "{}", stdout(&out));
+    assert!(stdout(&out).contains("every record keeps the rules"));
+}
+
+#[test]
+fn each_broken_rule_fails_under_its_check() {
+    let item = |details: &str| {
+        format!(
+            "---\ntype: Backlog Item\ntitle: X\ndescription: Y.\ntags: [a]\nstatus: stable\nfiled: 2026-10-01\n\
+             verified: {{by: human:a, at: 2026-10-01T10:00:00+09:00}}\ndeadline_kind: none\ndeadline: an alarm\n---\n\n\
+             # Trigger\n\nX.\n\n# State\n\nY.\n\n# Details\n\n{details}\n"
+        )
+    };
+    // Each case breaks one rule of a clean repository: (the check that must name it, what to write)
+    let cases: [(&str, &str, String); 10] = [
+        ("the bundle is seen", "docs/backlog/rules.md", String::new()),
+        (
+            "every backlog document keeps the format",
+            "docs/backlog/x.md",
+            "# no frontmatter\n".into(),
+        ),
+        (
+            "every link in # Details resolves",
+            "docs/backlog/x.md",
+            item("[gone](/no_such.md)"),
+        ),
+        (
+            "the log points only at real backlog items",
+            "docs/log.md",
+            "# Log\n\n## 2026-10-02\n\n- docs/backlog/no-such-item.md\n".into(),
+        ),
+        (
+            "the log keeps its structure",
+            "docs/log.md",
+            "# Log\n\n## 2026-10-01\n\n## 2026-10-02\n".into(),
+        ),
+        (
+            "every document is a known type in its place",
+            "docs/other/x.md",
+            "---\ntype: Spec\n---\n".into(),
+        ),
+        (
+            "every spec keeps the format",
+            "docs/done/x.md",
+            "---\ntype: Spec\ntitle: A\ndescription: B.\nstatus: stable\n---\n".into(),
+        ),
+        (
+            "every index is up to date",
+            "docs/backlog/index.md",
+            "edited by hand\n".into(),
+        ),
+        (
+            "no spec sits at the repository root",
+            "genre_spec.md",
+            "# spec\n".into(),
+        ),
+        ("the log keeps its structure", "docs/log.md", String::new()),
+    ];
+    for (check, path, text) in cases {
+        let root = clean_repo();
+        let target = root.path().join(path);
+        if text.is_empty() {
+            fs::remove_file(&target).unwrap();
+        } else {
+            fs::create_dir_all(target.parent().unwrap()).unwrap();
+            fs::write(&target, text).unwrap();
+        }
+        let out = run(&["--root", &root_arg(root.path()), "check"]);
+        assert_eq!(out.status.code(), Some(1), "{check}: {}", stdout(&out));
+        assert!(
+            stdout(&out).contains(&format!("{check}:")),
+            "{check} did not name it: {}",
+            stdout(&out)
+        );
+    }
 }
 
 #[test]

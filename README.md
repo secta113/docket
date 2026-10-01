@@ -9,7 +9,7 @@ so any OKF tool can read them. A port of the record checks in
 [project-template](https://github.com/secta113/project-template), so that a project not written in Python does not
 need Python only for its records.
 
-Work in progress: `index` works; `check` fails with "not implemented yet".
+Work in progress: ported from project-template, not yet packaged for pip.
 
 ```sh
 docket --root <repository> check   # check the records
