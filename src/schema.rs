@@ -609,6 +609,15 @@ Not yet.
         let bad = [
             ("no trigger", good("# Trigger\n\nThe next deploy\n\n", "")),
             ("empty state", good("Not yet.\n", "")),
+            // A reader of the rendered page sees neither a comment nor what a code block holds
+            (
+                "a state that is only a comment",
+                good("Not yet.\n", "<!-- Not yet. -->\n"),
+            ),
+            (
+                "headings only inside an unclosed code block",
+                good("The next deploy\n", "The next deploy\n\n```\n"),
+            ),
             ("no verified time", good(&format!(", {AT}"), "")),
             // OKF asks for a datetime. With a date only, someone would have to invent the time
             ("verified date only", good(AT, "at: 2026-09-28")),

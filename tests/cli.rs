@@ -75,7 +75,7 @@ fn each_broken_rule_fails_under_its_check() {
         )
     };
     // Each case breaks one rule of a clean repository: (the check that must name it, what to write)
-    let cases: [(&str, &str, String); 11] = [
+    let cases: [(&str, &str, String); 12] = [
         ("the bundle is seen", "docs/backlog/rules.md", String::new()),
         (
             "every backlog document keeps the format",
@@ -86,6 +86,12 @@ fn each_broken_rule_fails_under_its_check() {
             "every link in # Details resolves",
             "docs/backlog/x.md",
             item("[gone](/no_such.md)"),
+        ),
+        // The only link is inside a comment, so a reader sees none
+        (
+            "every link in # Details resolves",
+            "docs/backlog/x.md",
+            item("Nothing yet. <!-- [log](/log.md) -->"),
         ),
         (
             "the log points only at real backlog items",

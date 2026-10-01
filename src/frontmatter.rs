@@ -7,7 +7,11 @@ use regex::Regex;
 use yaml_rust2::yaml::Hash;
 use yaml_rust2::{Yaml, YamlLoader};
 
-/// Body heading -> the text under it, trimmed. A repeated heading collects the text under every occurrence.
+use crate::markdown::visible;
+
+/// Body heading -> the visible text under it, trimmed. A repeated heading collects the text under every occurrence.
+/// Comments and code blocks are left out, as a reader of the rendered page does not see them as text: a heading in
+/// one starts no section, and a section that holds only one is empty.
 pub type Sections = BTreeMap<String, String>;
 
 static FRONT_MATTER: LazyLock<Regex> =
@@ -29,7 +33,8 @@ pub fn split(text: &str) -> Result<(Hash, Sections), String> {
     };
     let mut lines: BTreeMap<String, Vec<&str>> = BTreeMap::new();
     let mut current: Option<String> = None;
-    for line in caps[2].split('\n') {
+    let body = visible(&caps[2]);
+    for line in body.split('\n') {
         if let Some(heading) = line.strip_prefix("# ") {
             let name = heading.trim().to_string();
             lines.entry(name.clone()).or_default();
@@ -57,6 +62,15 @@ mod tests {
         assert_eq!(sections["A"], "one \n\n## sub\nagain");
         assert_eq!(sections["B"], "");
         assert_eq!(sections.len(), 2);
+    }
+
+    #[test]
+    fn sections_hold_only_what_is_shown() {
+        let text =
+            "---\ntype: X\n---\n# A\n\nshown <!-- not shown -->\n\n```\n# B\n```\n<!--\n# C\n-->\n";
+        let (_, sections) = split(text).unwrap();
+        assert_eq!(sections.keys().collect::<Vec<_>>(), ["A"]);
+        assert_eq!(sections["A"], "shown");
     }
 
     #[test]

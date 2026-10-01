@@ -113,7 +113,9 @@ stale_after: 2027-01-01T00:00:00+09:00   # optional: when to measure the state a
 - **Every index file equals what `docket index` writes.** Nobody maintains a list by hand.
 - **No spec sits at the repository root.**
 
-The frontmatter is read as YAML 1.2: quoting a value never changes whether it passes.
+The frontmatter is read as YAML 1.2: quoting a value never changes whether it passes. The body is read as GitHub
+renders it: an HTML comment or a fenced code block (``` or ~~~, indented by up to 3 spaces, running to the end when
+it is not closed) is not text, so a heading, a link or the only text of a section inside one counts for nothing.
 
 ## Development
 

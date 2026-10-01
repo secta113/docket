@@ -1,5 +1,5 @@
-//! Markdown headings and links, read the way GitHub reads them. The records link to each other with standard markdown
-//! links (OKF 0.2, section 6.1), and a link to a heading uses GitHub's anchor for that heading.
+//! Markdown read the way GitHub reads it: the text it shows, headings and links. The records link to each other with
+//! standard markdown links (OKF 0.2, section 6.1), and a link to a heading uses GitHub's anchor for that heading.
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -11,10 +11,6 @@ use unicode_general_category::{GeneralCategory, get_general_category};
 
 use crate::source::read_source;
 
-// Not rendered, so no heading inside them gets an anchor: HTML comments and fenced code blocks. As in GFM, a fence may
-// be indented by up to 3 spaces
-static HIDDEN: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?sm)<!--.*?-->|^ {0,3}```.*?^ {0,3}```").unwrap());
 static HEADING: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?m)^#{1,6}[ \t]+(.+?)[ \t]*$").unwrap());
 static LINK: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\[([^\]]*)\]\(([^)\s]+)\)").unwrap());
@@ -24,9 +20,91 @@ static URL: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[A-Za-z][A-Za-z0-9+
 // A drive letter has the form of a one-letter URL scheme. No scheme has one letter
 static DRIVE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[A-Za-z]:").unwrap());
 
-/// The text without the parts that are not rendered.
+/// The text without the parts GitHub does not render as text: HTML comments and fenced code blocks. Every check that
+/// reads the structure of a document (its sections, headings and links) reads this, so a heading or a link that a
+/// reader of the page cannot see counts for nothing.
+///
+/// Read as GFM reads them. A fence is a line of 3 or more backticks or tildes, indented by up to 3 spaces; a backtick
+/// fence has no backtick after it on the line, or the line is inline code. It is closed by a line of the same
+/// character, at least as long, indented by up to 3 spaces, and an unclosed fence runs to the end. A comment runs from
+/// `<!--` to the next `-->`, across lines, and the text around it stays; inside a fence, `<!--` is code.
 pub fn visible(text: &str) -> String {
-    HIDDEN.replace_all(text, "").into_owned()
+    let mut out = String::new();
+    let mut fence: Option<(char, usize)> = None;
+    // Inside a comment: the text before it on its first line, which the text after its end joins
+    let mut comment: Option<String> = None;
+    for line in text.split_inclusive('\n') {
+        if let Some((mark, length)) = fence {
+            if fence_length(line, mark).is_some_and(|n| n >= length) && is_fence_end(line, mark) {
+                fence = None;
+            }
+            continue;
+        }
+        let mut rest = line;
+        let mut shown = match comment.take() {
+            Some(before) => match rest.find("-->") {
+                Some(end) => {
+                    rest = &rest[end + 3..];
+                    before
+                }
+                None => {
+                    comment = Some(before);
+                    continue;
+                }
+            },
+            None => {
+                if let Some(opened) = fence_opening(line) {
+                    fence = Some(opened);
+                    continue;
+                }
+                String::new()
+            }
+        };
+        let mut open = false;
+        while let Some(start) = rest.find("<!--") {
+            shown.push_str(&rest[..start]);
+            match rest[start + 4..].find("-->") {
+                Some(end) => rest = &rest[start + 4 + end + 3..],
+                None => {
+                    open = true;
+                    rest = "";
+                    break;
+                }
+            }
+        }
+        shown.push_str(rest);
+        if open {
+            comment = Some(shown);
+        } else {
+            out.push_str(&shown);
+        }
+    }
+    out
+}
+
+/// The run of `mark` that starts a line, after up to 3 spaces: its length, when it is long enough for a fence.
+fn fence_length(line: &str, mark: char) -> Option<usize> {
+    let indent = line.len() - line.trim_start_matches(' ').len();
+    let length = line[indent..].chars().take_while(|&c| c == mark).count();
+    (indent <= 3 && length >= 3).then_some(length)
+}
+
+/// The fence a line opens: its character and its length.
+fn fence_opening(line: &str) -> Option<(char, usize)> {
+    ['`', '~'].into_iter().find_map(|mark| {
+        let length = fence_length(line, mark)?;
+        // The marks are ASCII, so the run's length in characters is its length in bytes
+        let info = &line.trim_start_matches(' ')[length..];
+        (mark == '~' || !info.contains('`')).then_some((mark, length))
+    })
+}
+
+/// Whether a line that starts with a run of `mark` has nothing after the run, as a closing fence has.
+fn is_fence_end(line: &str, mark: char) -> bool {
+    line.trim_start_matches(' ')
+        .trim_start_matches(mark)
+        .trim()
+        .is_empty()
 }
 
 /// Letters, numbers and marks: the Unicode categories GitHub keeps in an anchor.
@@ -189,6 +267,58 @@ mod tests {
         let text = "# Same\n\n## Same\n\n<!--\n## Hidden\n-->\n\n```\n## Code\n```\n\n   ```\n## Indented\n ```\n";
         let expected: HashSet<String> = ["same", "same-1"].map(String::from).into();
         assert_eq!(anchors(text), expected);
+    }
+
+    /// What GFM hides, and what only looks hidden. Every heading named "Hidden" must give no anchor.
+    #[test]
+    fn hidden_as_gfm_hides() {
+        let text = "\
+# Shown
+
+~~~
+# Hidden: a tilde fence
+~~~
+
+````
+```
+# Hidden: a shorter fence does not close a longer one
+```
+````
+
+~~~
+```
+# Hidden: a fence of the other character does not close it
+~~~
+
+``` not a fence, inline code ```
+
+# Shown after inline code
+
+```
+<!--
+```
+
+# Shown after a comment opener inside code
+
+Text <!-- one line --> and text <!--
+# Hidden: a comment that starts mid-line
+--> text
+
+# Shown after a comment
+
+```
+# Hidden: an unclosed fence runs to the end
+";
+        let expected: HashSet<String> = [
+            "shown",
+            "shown-after-inline-code",
+            "shown-after-a-comment-opener-inside-code",
+            "shown-after-a-comment",
+        ]
+        .map(String::from)
+        .into();
+        assert_eq!(anchors(text), expected);
+        assert_eq!(visible("a <!-- b --> c\n<!--\nd\n-->\ne\n"), "a  c\n\ne\n");
     }
 
     #[test]
