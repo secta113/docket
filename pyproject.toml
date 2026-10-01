@@ -8,6 +8,8 @@ name = "docket"
 description = "Checks the records an agent works from (backlog, specs, log) and writes their index files"
 readme = "README.md"
 requires-python = ">=3.9"
+license = "MIT OR Apache-2.0"
+license-files = ["LICENSE-MIT", "LICENSE-APACHE"]
 # Taken from Cargo.toml
 dynamic = ["version"]
 
