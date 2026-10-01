@@ -26,9 +26,9 @@ change**. Where the two disagree, this file wins.
 
 ## Rules for every change
 
-- **Build and run CI in the container: `docker compose run --rm dev cargo xtask ci`.** The host is not used for
-  builds: on Windows it needs the MSVC linker and the Windows SDK, and CI runs on Linux.
+- **Run CI with `cargo xtask ci`, on the host or in the container (`docker compose run --rm dev cargo xtask ci`).** The
+  container is the Linux of CI and needs only Docker. On Windows, the host needs Visual Studio's C++ tools and the
+  Windows SDK; without the SDK, linking fails (`kernel32.lib` not found), and Git Bash's own `link` gets in the way.
 - **Change the toolchain version only in `rust-toolchain.toml`,** and the base image (`Dockerfile`, the `container`
   in `.github/workflows/ci.yml`) to the same version. Change the packaging tools only in `requirements-build.txt`.
-- **The host can run the Windows wheel but not build it.** To try a change on Windows, build the wheel in the container
-  (README) and `pip install` it into a venv on the host.
+- **Try a wheel as a user gets it:** build it (README) and `pip install` it into a fresh venv, outside the build tree.

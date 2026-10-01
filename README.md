@@ -18,7 +18,8 @@ docket --root <repository> index   # write every index.md from the frontmatter
 
 ## Development
 
-Everything runs in the container (`compose.yaml`), so the host needs only Docker:
+`cargo xtask ci` runs format, lint and tests on the host. On Windows that needs Visual Studio's C++ tools and the
+Windows SDK. Everything also runs in the container (`compose.yaml`), where the host needs only Docker:
 
 ```sh
 docker compose run --rm dev cargo xtask ci                                            # format, lint, tests

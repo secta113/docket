@@ -1,6 +1,6 @@
 # The development environment: `docker compose run --rm dev cargo xtask ci`.
-# Linux, as in GitHub Actions, so a build does not depend on the toolchain of the host (on Windows, the MSVC linker and
-# the Windows SDK).
+# Linux, as in GitHub Actions, and the host needs only Docker (a native build on Windows needs the MSVC linker and the
+# Windows SDK).
 services:
   dev:
     build: .
