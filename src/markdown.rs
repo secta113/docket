@@ -18,7 +18,9 @@ static HIDDEN: LazyLock<Regex> =
 static HEADING: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?m)^#{1,6}[ \t]+(.+?)[ \t]*$").unwrap());
 static LINK: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\[([^\]]*)\]\(([^)\s]+)\)").unwrap());
-static URL: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[A-Za-z][A-Za-z0-9+.-]*:").unwrap());
+// A URL scheme. RFC 3986 allows `.` in one, but no scheme in use has it, while a file name with a line number
+// (`check.rs:104`) always does: read as a URL, that path would never be checked
+static URL: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[A-Za-z][A-Za-z0-9+-]*:").unwrap());
 // A drive letter has the form of a one-letter URL scheme. No scheme has one letter
 static DRIVE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[A-Za-z]:").unwrap());
 
@@ -235,6 +237,8 @@ mod tests {
             ("a file", "/log.md"),
             ("`render_index`", "../../tests/backlog_bundle.py"),
             ("a URL is not checked", "https://example.com/okf"),
+            ("a scheme with a plus", "coap+tcp://example.com/x"),
+            ("mail", "mailto:someone@example.com"),
         ];
         assert_eq!(reasons(root.path(), &resolved), vec![None; resolved.len()]);
     }
@@ -257,6 +261,9 @@ mod tests {
             // A drive letter is not a URL scheme: the path names a file on one machine
             ("drive letter", "C:/no/such/file.md"),
             ("drive letter with backslashes", "c:\\no\\such\\file.md"),
+            // A file name with a line number is a path, not a URL: no scheme contains a dot
+            ("a file and a line", "nothing.md:12"),
+            ("an existing file and a line", "rules.md:3"),
         ];
         let found = reasons(root.path(), &bad);
         for ((text, target), why) in bad.iter().zip(&found) {

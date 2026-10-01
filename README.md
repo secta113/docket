@@ -98,7 +98,8 @@ stale_after: 2027-01-01T00:00:00+09:00   # optional: when to measure the state a
   (`2026-10-31`, `2026/10/31`, `31.10.2026`, `2026年10月31日` or a month alone); an event may contain a date. Every
   time has a time zone. `stale_after` is later than the last `verified`.
 - **Every link in `# Details` resolves,** with heading anchors computed as GitHub computes them. A path with a drive
-  letter (`C:/...`) fails: it names a file on one machine.
+  letter (`C:/...`) fails: it names a file on one machine. Only a URL (`https:`, `mailto:`) is not checked, and a
+  file name with a line number (`check.rs:104`) is a path, not a URL.
 - **Every spec keeps the format:** `title`, `description` and `status`, a status that matches its directory, and a
   non-empty `# Resolution` once it is closed.
 - **The log exists, points only at backlog items that exist** (written with `/` or `\`), and its second-level
