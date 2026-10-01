@@ -93,8 +93,9 @@ pub fn links(text: &str) -> Vec<(String, String)> {
 ///
 /// `here` is the directory of the document that holds the link, for relative targets. A target starting with `/` is
 /// relative to `bundle_root`. A URL is not checked. A path with a drive letter (`C:/...`) fails: it names a file on one
-/// machine, which no other checkout and no reader on GitHub can follow. A link to a `.py` file names a function or
-/// class in its text.
+/// machine, which no other checkout and no reader on GitHub can follow. A path with `\` fails: only Windows reads it as
+/// a separator, so the same link would resolve on one machine and not on another. A link to a `.py` file names a
+/// function or class in its text.
 pub fn broken(text: &str, target: &str, here: &Path, bundle_root: &Path) -> Option<String> {
     if DRIVE.is_match(target) {
         return Some(format!(
@@ -106,6 +107,9 @@ pub fn broken(text: &str, target: &str, here: &Path, bundle_root: &Path) -> Opti
     }
     let decoded = percent_decode_str(target).decode_utf8_lossy();
     let (path, fragment) = decoded.split_once('#').unwrap_or((&decoded, ""));
+    if path.contains('\\') {
+        return Some(format!("a path with \\; separate with /: {target}"));
+    }
     if path.is_empty() {
         return Some(format!("no file in the link: {target}"));
     }
@@ -264,10 +268,24 @@ mod tests {
             // A file name with a line number is a path, not a URL: no scheme contains a dot
             ("a file and a line", "nothing.md:12"),
             ("an existing file and a line", "rules.md:3"),
+            // The file exists, but only Windows reads `\` as a separator
+            ("backslashes", "..\\log.md"),
         ];
         let found = reasons(root.path(), &bad);
         for ((text, target), why) in bad.iter().zip(&found) {
             assert!(why.is_some(), "{text} ({target}) passed");
         }
+    }
+
+    #[test]
+    fn a_backslash_fails_on_every_platform() {
+        // Off Windows, `..\log.md` is a missing file anyway; the reason shows it fails for the separator everywhere
+        let root = tree();
+        let why = reasons(root.path(), &[("x", "..\\log.md")]).remove(0);
+        assert!(
+            why.as_ref()
+                .is_some_and(|why| why.contains("separate with /")),
+            "{why:?}"
+        );
     }
 }
