@@ -106,7 +106,9 @@ stale_after: 2027-01-01T00:00:00+09:00   # optional: when to measure the state a
   file name with a line number (`check.rs:104`) is a path, not a URL. A path is separated with `/`: only Windows
   reads a backslash as a separator, so a path with one fails. A link to a `.py` file names, in its text, a function
   or class defined there, at any depth. The file is parsed as Python, so a `def` line inside a string or a docstring
-  does not count.
+  does not count. The text is one name exactly as defined (``[`render_index`](../tests/bundle.py)``), not a call
+  (`render_index()`) or a dotted path (`Bundle.render`); when it names nothing, the message says which name to write
+  or lists the names the file defines.
 - **Every spec keeps the format:** `title`, `description` and `status`, a status that matches its directory, and a
   non-empty `# Resolution` once it is closed.
 - **The log exists, points only at backlog items that exist** (`backlog/<slug>.md`, written with `/` or `\`, the

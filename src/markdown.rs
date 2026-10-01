@@ -1,7 +1,7 @@
 //! Markdown read the way GitHub reads it: the text it shows, headings and links. The records link to each other with
 //! standard markdown links (OKF 0.2, section 6.1), and a link to a heading uses GitHub's anchor for that heading.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::Path;
 use std::sync::LazyLock;
 
@@ -239,8 +239,12 @@ pub fn broken(text: &str, target: &str, here: &Path, bundle_root: &Path) -> Opti
         }
         // The name has to be defined, not only mentioned: a call, a comment or a string can keep a name after the
         // definition was renamed
-        if !python_definitions(&source).contains(name) {
-            return Some(format!("no def or class named {name} in {target}"));
+        let defined = python_definitions(&source);
+        if !defined.contains(name) {
+            return Some(format!(
+                "no def or class named {name} in {target}; {}",
+                how_to_name(name, &defined)
+            ));
         }
     } else if !fragment.is_empty() && !anchors(&source).contains(fragment) {
         return Some(format!("no heading with this anchor: {target}"));
@@ -251,9 +255,9 @@ pub fn broken(text: &str, target: &str, here: &Path, bundle_root: &Path) -> Opti
 /// The names of the functions and classes a Python file defines, at any depth (methods, and definitions inside
 /// functions, `if` and `try`). The file is parsed, so a `def` line inside a string or a docstring is not a definition.
 /// A file with a syntax error is read past the error, as far as the parser recovers.
-fn python_definitions(source: &str) -> HashSet<String> {
+fn python_definitions(source: &str) -> BTreeSet<String> {
     #[derive(Default)]
-    struct Definitions(HashSet<String>);
+    struct Definitions(BTreeSet<String>);
     impl<'a> StatementVisitor<'a> for Definitions {
         fn visit_stmt(&mut self, stmt: &'a Stmt) {
             match stmt {
@@ -272,6 +276,30 @@ fn python_definitions(source: &str) -> HashSet<String> {
     let mut definitions = Definitions::default();
     definitions.visit_body(&module.syntax().body);
     definitions.0
+}
+
+/// How to fix a link text that names nothing the file defines, so whoever wrote it can fix it from the message alone.
+/// The text is one name exactly as defined: a call (`f()`) or a dotted path (`Class.method`) names its last part.
+/// Otherwise the message lists what the file defines.
+fn how_to_name(name: &str, defined: &BTreeSet<String>) -> String {
+    let bare = name.split('(').next().unwrap_or(name);
+    let bare = bare.rsplit('.').next().unwrap_or(bare).trim();
+    if bare != name && defined.contains(bare) {
+        return format!("write the bare name as the link text: `{bare}`");
+    }
+    const SHOWN: usize = 20;
+    if defined.is_empty() {
+        return "the file defines no function or class".into();
+    }
+    let mut names: Vec<&str> = defined.iter().take(SHOWN).map(String::as_str).collect();
+    if defined.len() > SHOWN {
+        names.push("...");
+    }
+    format!(
+        "the link text is one name as the file defines it ({} defined: {})",
+        defined.len(),
+        names.join(", ")
+    )
 }
 
 #[cfg(test)]
@@ -509,6 +537,36 @@ Text <!-- one line --> and text <!--
         // A half-written file still names what it defines below the error
         let names = python_definitions("def broken(:\n    pass\n\ndef after():\n    pass\n");
         assert!(names.contains("after"), "{names:?}");
+    }
+
+    #[test]
+    fn a_wrong_name_says_how_to_write_it() {
+        let root = tree();
+        let why = |text: &str| {
+            reasons(root.path(), &[(text, "../../tests/backlog_bundle.py")])
+                .remove(0)
+                .unwrap()
+        };
+        // A call or a dotted path: the bare name it ends with
+        assert!(
+            why("`render_index()`")
+                .ends_with("write the bare name as the link text: `render_index`")
+        );
+        assert!(why("`Bundle.method`").ends_with("write the bare name as the link text: `method`"));
+        // Anything else: what the file defines, so the right name can be picked
+        let listed = why("`render`");
+        // A def inside a string is not listed
+        assert!(
+            listed.ends_with("(5 defined: Bundle, conditional, inner, method, render_index)"),
+            "{listed}"
+        );
+        assert_eq!(
+            how_to_name("x", &BTreeSet::new()),
+            "the file defines no function or class"
+        );
+        let many: BTreeSet<String> = (0..25).map(|n| format!("f{n:02}")).collect();
+        assert!(how_to_name("x", &many).contains("(25 defined: f00, f01,"));
+        assert!(how_to_name("x", &many).ends_with("f19, ...)"));
     }
 
     #[test]
