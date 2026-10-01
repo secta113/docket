@@ -7,7 +7,7 @@ use regex::Regex;
 use yaml_rust2::yaml::Hash;
 use yaml_rust2::{Yaml, YamlLoader};
 
-use crate::markdown::visible;
+use crate::markdown::{heading, visible};
 
 /// Body heading -> the visible text under it, trimmed. A repeated heading collects the text under every occurrence.
 /// Comments and code blocks are left out, as a reader of the rendered page does not see them as text: a heading in
@@ -35,8 +35,8 @@ pub fn split(text: &str) -> Result<(Hash, Sections), String> {
     let mut current: Option<String> = None;
     let body = visible(&caps[2]);
     for line in body.split('\n') {
-        if let Some(heading) = line.strip_prefix("# ") {
-            let name = heading.trim().to_string();
+        if let Some((1, heading)) = heading(line) {
+            let name = heading.to_string();
             lines.entry(name.clone()).or_default();
             current = Some(name);
         } else if let Some(name) = &current {
@@ -71,6 +71,14 @@ mod tests {
         let (_, sections) = split(text).unwrap();
         assert_eq!(sections.keys().collect::<Vec<_>>(), ["A"]);
         assert_eq!(sections["A"], "shown");
+    }
+
+    #[test]
+    fn an_indented_heading_starts_a_section() {
+        let (_, sections) =
+            split("---\ntype: X\n---\n  # A\nx\n   # B ##\ny\n    # code\n").unwrap();
+        assert_eq!(sections.keys().collect::<Vec<_>>(), ["A", "B"]);
+        assert_eq!(sections["B"], "y\n    # code");
     }
 
     #[test]

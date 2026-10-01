@@ -21,7 +21,7 @@ use regex::Regex;
 
 use crate::bundle::{Bundle, Docs, RESERVED, backlog, specs};
 use crate::frontmatter::split;
-use crate::markdown::{broken, links, visible};
+use crate::markdown::{broken, heading, links, visible};
 use crate::schema::SPEC_FOLDERS;
 use crate::source::{read_source, relative_path};
 
@@ -43,7 +43,6 @@ static BACKLOG_REF: LazyLock<Regex> =
 // A file at the repository root with one of these names is taken for a spec
 static ROOT_SPEC: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)(spec|仕様).*\.md$").unwrap());
-static LOG_HEADING: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?m)^## (.*)$").unwrap());
 static DATE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\d{4}-\d{2}-\d{2}$").unwrap());
 
 /// One broken rule: which check found it, and what is wrong.
@@ -218,8 +217,11 @@ pub fn log_problems(text: &str) -> Vec<String> {
     let shown = visible(text);
     let mut found = Vec::new();
     let mut last: Option<NaiveDate> = None;
-    for caps in LOG_HEADING.captures_iter(&shown) {
-        let heading = &caps[1];
+    let dates = shown
+        .lines()
+        .filter_map(heading)
+        .filter(|(level, _)| *level == 2);
+    for (_, heading) in dates {
         let day = DATE
             .is_match(heading)
             .then(|| NaiveDate::parse_from_str(heading, "%Y-%m-%d").ok())
@@ -239,19 +241,18 @@ pub fn log_problems(text: &str) -> Vec<String> {
     }
     let mut lines = shown
         .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
+        .filter(|line| !line.trim().is_empty())
         .peekable();
     // The title: a first-level heading on the first line, unless it is a date (an entry one level up)
     lines.next_if(|line| {
-        line.strip_prefix("# ")
-            .is_some_and(|title| !DATE.is_match(title.trim()))
+        heading(line).is_some_and(|(level, title)| level == 1 && !DATE.is_match(title))
     });
     if last.is_none()
         && let Some(entry) = lines.next()
     {
         found.push(format!(
-            "an entry with no ## YYYY-MM-DD heading in the log: {entry}"
+            "an entry with no ## YYYY-MM-DD heading in the log: {}",
+            entry.trim()
         ));
     }
     found
@@ -388,6 +389,12 @@ mod tests {
                 "# Log\n\n<!--\n### <Task name>\n-->\n",
             ),
             ("empty", ""),
+            // GitHub shows these as the same heading
+            (
+                "a date heading with spaces around it",
+                "  ## 2026-10-02 \n\n## 2026-10-01 ##\n",
+            ),
+            ("an indented title", " # Log\n"),
         ];
         for (name, text) in good {
             assert_eq!(log_problems(text), Vec::<String>::new(), "{name}");
@@ -403,6 +410,15 @@ mod tests {
             ("dates one level up", "# Log\n\n# 2026-10-02\n\n### a\n"),
             ("dates one level down", "# Log\n\n### 2026-10-02\n"),
             ("a date for the title", "# 2026-10-02\n"),
+            // GFM lets a heading be indented by up to 3 spaces
+            (
+                "an indented date heading out of order",
+                "## 2026-10-01\n\n  ## 2026-10-02\n",
+            ),
+            (
+                "an indented heading that is not a date",
+                "## 2026-10-02\n\n   ## not a date\n",
+            ),
         ];
         let passed: Vec<&str> = bad
             .iter()

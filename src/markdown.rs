@@ -11,8 +11,6 @@ use unicode_general_category::{GeneralCategory, get_general_category};
 
 use crate::source::read_source;
 
-static HEADING: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?m)^#{1,6}[ \t]+(.+?)[ \t]*$").unwrap());
 static LINK: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\[([^\]]*)\]\(([^)\s]+)\)").unwrap());
 // A URL scheme. RFC 3986 allows `.` in one, but no scheme in use has it, while a file name with a line number
 // (`check.rs:104`) always does: read as a URL, that path would never be checked
@@ -143,12 +141,40 @@ pub fn slug(heading: &str) -> String {
         .collect()
 }
 
+/// The level and the text of a heading, when the line is one, read as GFM reads it: up to 3 spaces, 1 to 6 `#`, then
+/// a space or a tab before the text. A closing run of `#` after a space is not part of the text. Every check that looks
+/// for a heading (the sections of a document, the dates of the log, the anchors) reads it here.
+pub fn heading(line: &str) -> Option<(usize, &str)> {
+    let indent = line.len() - line.trim_start_matches(' ').len();
+    let rest = &line[indent..];
+    let level = rest.len() - rest.trim_start_matches('#').len();
+    let rest = &rest[level..];
+    if indent > 3
+        || !(1..=6).contains(&level)
+        || !(rest.is_empty() || rest.starts_with([' ', '\t']))
+    {
+        return None;
+    }
+    let text = rest.trim_matches([' ', '\t']);
+    let open = text.trim_end_matches('#');
+    let text = if open.is_empty() || open.ends_with([' ', '\t']) {
+        open.trim_end_matches([' ', '\t'])
+    } else {
+        text
+    };
+    Some((level, text))
+}
+
 /// Every heading anchor in a markdown text. A repeated heading gets `-1`, `-2`, ... as on GitHub.
 pub fn anchors(text: &str) -> HashSet<String> {
     let mut seen: HashMap<String, usize> = HashMap::new();
     let mut found = HashSet::new();
-    for caps in HEADING.captures_iter(&visible(text)) {
-        let base = slug(&caps[1]);
+    let shown = visible(text);
+    for (_, heading) in shown.lines().filter_map(heading) {
+        if heading.is_empty() {
+            continue;
+        }
+        let base = slug(heading);
         let count = seen.entry(base.clone()).or_insert(0);
         found.insert(if *count == 0 {
             base.clone()
@@ -266,6 +292,16 @@ mod tests {
         // GFM lets a fence be indented by up to 3 spaces, and the closing fence by its own amount
         let text = "# Same\n\n## Same\n\n<!--\n## Hidden\n-->\n\n```\n## Code\n```\n\n   ```\n## Indented\n ```\n";
         let expected: HashSet<String> = ["same", "same-1"].map(String::from).into();
+        assert_eq!(anchors(text), expected);
+    }
+
+    /// GFM's headings: indented by up to 3 spaces, and without the closing run of `#` some write after the text
+    #[test]
+    fn headings_as_gfm_reads_them() {
+        let text = " # One space\n   ## Three spaces\n    # Four spaces is code\n## Closed ##\n#No space\n";
+        let expected: HashSet<String> = ["one-space", "three-spaces", "closed"]
+            .map(String::from)
+            .into();
         assert_eq!(anchors(text), expected);
     }
 
