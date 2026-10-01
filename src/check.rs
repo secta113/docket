@@ -32,9 +32,10 @@ const TYPES: [(&str, &[&str]); 4] = [
 ];
 
 // How the log points to a backlog item. Matched without `docs/`, so pointers written while the backlog was at the
-// repository root (`backlog/<slug>.md`) still match an item by its slug
+// repository root (`backlog/<slug>.md`) still match an item by its slug. A pointer written with Windows separators
+// (`docs\backlog\<slug>.md`) is a pointer too, and has to name an item that exists
 static BACKLOG_REF: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"backlog/([\w.-]+\.md)").unwrap());
+    LazyLock::new(|| Regex::new(r"backlog[/\\]([\w.-]+\.md)").unwrap());
 // A file at the repository root with one of these names is taken for a spec
 static ROOT_SPEC: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)(spec|仕様).*\.md$").unwrap());
@@ -333,9 +334,13 @@ mod tests {
     #[test]
     fn a_dangling_log_pointer_is_caught() {
         let log = "## 2026-10-01\n\n### Something\n- **Open items**: docs/backlog/rules.md, \
-                   docs/backlog/no-such-item.md, backlog/rules.md\n";
+                   docs/backlog/no-such-item.md, backlog/rules.md, docs\\backlog\\rules.md, \
+                   docs\\backlog\\written-on-windows.md\n";
         let names = vec!["rules.md".to_string(), "index.md".to_string()];
-        assert_eq!(dangling_backlog_refs(log, &names), ["no-such-item.md"]);
+        assert_eq!(
+            dangling_backlog_refs(log, &names),
+            ["no-such-item.md", "written-on-windows.md"]
+        );
     }
 
     #[test]
