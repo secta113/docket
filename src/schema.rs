@@ -370,9 +370,10 @@ fn text(value: &Yaml) -> Result<String, String> {
     }
 }
 
+/// A string with something in it: spaces alone are as empty as nothing.
 fn non_empty_text(value: &Yaml) -> Result<String, String> {
     text(value).and_then(|s| {
-        if s.is_empty() {
+        if s.trim().is_empty() {
             Err("empty".into())
         } else {
             Ok(s)
@@ -454,9 +455,10 @@ fn stamps(value: &Yaml) -> Result<Vec<Stamp>, String> {
     }
 }
 
+/// A list of tags. An empty tag names no area.
 fn text_list(value: &Yaml) -> Result<Vec<String>, String> {
     match value {
-        Yaml::Array(list) => list.iter().map(text).collect(),
+        Yaml::Array(list) => list.iter().map(non_empty_text).collect(),
         other => Err(format!("not a list: {other:?}")),
     }
 }
@@ -715,6 +717,14 @@ Not yet.
                 "two tags",
                 good("tags: [operations]", "tags: [operations, other]"),
             ),
+            // Spaces alone are as empty as nothing
+            ("a blank title", good("title: Some problem", "title: \" \"")),
+            (
+                "a blank deadline",
+                good("deadline: until the next deploy", "deadline: \"  \""),
+            ),
+            ("an empty tag", good("tags: [operations]", "tags: [\"\"]")),
+            ("a blank tag", good("tags: [operations]", "tags: [\" \"]")),
             (
                 "filed is not a date",
                 good("filed: 2026-09-27", "filed: 2026-13-01"),
@@ -802,6 +812,16 @@ Something.
                 "specs",
                 "no description",
                 SPEC.replace("description: One sentence.\n", ""),
+            ),
+            (
+                "specs",
+                "a blank description",
+                SPEC.replace("description: One sentence.", "description: \" \""),
+            ),
+            (
+                "specs",
+                "an empty tag",
+                SPEC.replace("status: stable", "status: stable\ntags: [\"\"]"),
             ),
             (
                 "specs",

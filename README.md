@@ -96,7 +96,8 @@ stale_after: 2027-01-01T00:00:00+09:00   # optional: when to measure the state a
 - **Every backlog item keeps the format:** the fields above with their types, no unknown field, and non-empty
   Trigger, State and Details (and Resolution when closed). A deadline is an event or a reason, never only a date
   (`2026-10-31`, `2026/10/31`, `31.10.2026`, `2026年10月31日` or a month alone); an event may contain a date. Every
-  time has a time zone. `stale_after` is later than the last `verified`.
+  time has a time zone. `stale_after` is later than the last `verified`. A required text is not blank (spaces alone
+  are empty), in every document type, and no tag is empty.
 - **Every link in `# Details` resolves,** with heading anchors computed as GitHub computes them. A path with a drive
   letter (`C:/...`) fails: it names a file on one machine. Only a URL (`https:`, `mailto:`) is not checked, and a
   file name with a line number (`check.rs:104`) is a path, not a URL. A path is separated with `/`: only Windows
