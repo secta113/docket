@@ -111,7 +111,8 @@ stale_after: 2027-01-01T00:00:00+09:00   # optional: when to measure the state a
   a flat list of entries grouped under the dates (OKF 0.2, section 9): every entry is a list item, and its indented
   lines (wrapped text, nested items) belong to it. A task heading (`### ...`), a paragraph, or an entry before the
   first date fails. A new log, with only its title and HTML comments, passes.
-- **Every document is a known type in its directory.**
+- **Every document is a known type in its directory.** The fields OKF defines for a document pass as OKF writes them
+  (`generated` needs only `by`; every entry of `sources` needs a `resource`; `usage_window` is a `{from, to}` range).
 - **Every index file equals what `docket index` writes.** Nobody maintains a list by hand.
 - **No spec sits at the repository root.**
 

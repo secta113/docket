@@ -1,8 +1,9 @@
 //! The frontmatter of each record type: backlog items, guides and specs.
 //!
 //! OKF tells **readers** not to reject unknown fields. This is the **writer's** check, so unknown fields fail: a
-//! misspelled field would otherwise be silently dropped. Every field OKF defines passes, so a document another OKF
-//! tool wrote correctly does not fail.
+//! misspelled field would otherwise be silently dropped. Every field OKF defines for a concept (sections 4 and 5)
+//! passes as OKF writes it, so a document another OKF tool wrote correctly does not fail. The fields of an Attested
+//! Computation (section 10) do not, as no such document belongs in the records.
 
 use std::fmt::Display;
 use std::sync::LazyLock;
@@ -270,8 +271,9 @@ fn guide(fields: &mut Fields) -> Option<Guide> {
 
 /// Fields OKF defines that have no use here yet. They pass, so a document another OKF tool wrote does not fail.
 fn okf_optional(fields: &mut Fields) {
-    fields.optional("generated", stamp);
-    fields.optional("sources", any_list);
+    fields.optional("generated", generated);
+    fields.optional("sources", sources);
+    fields.optional("usage_window", usage_window);
     fields.optional("resource", text);
 }
 
@@ -432,19 +434,74 @@ fn stamp(value: &Yaml) -> Result<Stamp, String> {
         return Err(format!("not a {{by, at}} mapping: {value:?}"));
     };
     let mut fields = Fields::new(map);
-    let by = fields.required("by", |value| {
-        text(value).and_then(|s| {
-            if ACTOR.is_match(&s) {
-                Ok(s)
-            } else {
-                Err(format!(
-                    "not an actor (human:<id>, process:<id> or <producer>/<version>): {s}"
-                ))
-            }
-        })
-    });
+    let by = fields.required("by", actor);
     let at = fields.required("at", time);
     fields.finish(by.zip(at).map(|(by, at)| Stamp { by, at }))
+}
+
+fn actor(value: &Yaml) -> Result<String, String> {
+    let s = text(value)?;
+    if ACTOR.is_match(&s) {
+        Ok(s)
+    } else {
+        Err(format!(
+            "not an actor (human:<id>, process:<id> or <producer>/<version>): {s}"
+        ))
+    }
+}
+
+/// How the content was produced: `by` is required, and `at` is optional (OKF 0.2, section 5.2).
+fn generated(value: &Yaml) -> Result<(), String> {
+    let Yaml::Hash(map) = value else {
+        return Err(format!("not a {{by, at}} mapping: {value:?}"));
+    };
+    let mut fields = Fields::new(map);
+    let by = fields.required("by", actor);
+    let at = fields.optional("at", time);
+    fields.finish(by.zip(at).map(|_| ()))
+}
+
+/// The materials a document derives from: a list of entries, each with a `resource` (OKF 0.2, section 5.1).
+fn sources(value: &Yaml) -> Result<(), String> {
+    let Yaml::Array(list) = value else {
+        return Err(format!("not a list: {value:?}"));
+    };
+    list.iter().try_for_each(source)
+}
+
+fn source(value: &Yaml) -> Result<(), String> {
+    let Yaml::Hash(map) = value else {
+        return Err(format!("not a source mapping: {value:?}"));
+    };
+    let mut fields = Fields::new(map);
+    let resource = fields.required("resource", non_empty_text);
+    fields.optional("id", non_empty_text);
+    fields.optional("title", text);
+    // Not checked as an actor: OKF's own example of a source has `author: team:ga4-docs`, which is none of the forms
+    // of section 7
+    fields.optional("author", non_empty_text);
+    fields.optional("usage_count", count);
+    fields.optional("last_modified", time);
+    fields.optional("usage_window", usage_window);
+    fields.finish(resource.map(|_| ()))
+}
+
+/// The `{from, to}` datetime range that frames every `usage_count`.
+fn usage_window(value: &Yaml) -> Result<(), String> {
+    let Yaml::Hash(map) = value else {
+        return Err(format!("not a {{from, to}} mapping: {value:?}"));
+    };
+    let mut fields = Fields::new(map);
+    let from = fields.required("from", time);
+    let to = fields.required("to", time);
+    fields.finish(from.zip(to).map(|_| ()))
+}
+
+fn count(value: &Yaml) -> Result<i64, String> {
+    match value {
+        Yaml::Integer(n) if *n >= 0 => Ok(*n),
+        other => Err(format!("not a count: {other:?}")),
+    }
 }
 
 /// One `{by, at}` mapping or a list of them.
@@ -469,13 +526,6 @@ fn one_tag(value: &Yaml) -> Result<String, String> {
     match tags.len() {
         1 => Ok(tags.remove(0)),
         n => Err(format!("{n} tags; an item has exactly one area")),
-    }
-}
-
-fn any_list(value: &Yaml) -> Result<(), String> {
-    match value {
-        Yaml::Array(_) => Ok(()),
-        other => Err(format!("not a list: {other:?}")),
     }
 }
 
@@ -551,6 +601,26 @@ Not yet.
                     "status: stable",
                     "status: stable\ngenerated: {by: agent/v1, at: 2026-09-27T09:00:00Z}\
                      \nresource: https://example.com/x\nsources: [{resource: https://example.com/doc}]",
+                ),
+            ),
+            // OKF requires only `by` in `generated`
+            (
+                "generated without at",
+                good(
+                    "status: stable",
+                    "status: stable\ngenerated: {by: human:someone}",
+                ),
+            ),
+            // The example of section 5.1, author and all
+            (
+                "sources with every signal, and a usage window",
+                good(
+                    "status: stable",
+                    "status: stable\nsources:\n  - id: ga4-schema\
+                     \n    resource: https://developers.google.com/analytics/bigquery/export-schema\
+                     \n    title: GA4 BigQuery Export schema\n    author: team:ga4-docs\n    usage_count: 5000\
+                     \n    last_modified: 2026-05-30T00:00:00Z\
+                     \nusage_window: { from: 2026-06-01T00:00:00Z, to: 2026-06-30T00:00:00Z }",
                 ),
             ),
             // The content may be in any language
@@ -633,6 +703,32 @@ Not yet.
                 ),
             ),
             ("actor in the wrong form", good("human:someone", "someone")),
+            // OKF requires these within their mappings
+            (
+                "a source without a resource",
+                good("status: stable", "status: stable\nsources: [{title: x}]"),
+            ),
+            (
+                "generated without by",
+                good(
+                    "status: stable",
+                    "status: stable\ngenerated: {at: 2026-09-27T09:00:00Z}",
+                ),
+            ),
+            (
+                "a usage window without to",
+                good(
+                    "status: stable",
+                    "status: stable\nusage_window: {from: 2026-06-01T00:00:00Z}",
+                ),
+            ),
+            (
+                "a misspelled field in a source",
+                good(
+                    "status: stable",
+                    "status: stable\nsources: [{resource: x, usage_cuont: 3}]",
+                ),
+            ),
             (
                 "actor with a space",
                 good("human:someone", "'human:some one'"),
