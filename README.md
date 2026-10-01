@@ -109,7 +109,9 @@ The frontmatter is read as YAML 1.2: quoting a value never changes whether it pa
 
 ## Development
 
-`cargo xtask ci` runs format, lint and tests, the same checks as CI. On Windows the host needs Visual Studio's C++
+`cargo xtask ci` runs format, lint and tests, the same checks as CI. It also fails when the map in `AGENTS.md`
+misses a tracked top-level path or module of `src/` (or names one that is gone), and when `rust-toolchain.toml`,
+the `Dockerfile` and the CI workflow name different toolchain versions. On Windows the host needs Visual Studio's C++
 tools and the Windows SDK. Everything also runs in the container (`compose.yaml`), where the host needs only Docker:
 `docker compose run --rm dev cargo xtask ci`.
 
