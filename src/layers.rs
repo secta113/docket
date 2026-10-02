@@ -293,6 +293,10 @@ pub fn declaration(root: &Path) -> io::Result<Option<Result<Declaration, String>
     if !path.exists() {
         return Ok(None);
     }
+    // Found on Windows under another case, and missing on Linux and GitHub
+    if let Err(why) = crate::source::exactly(root, DECLARATION) {
+        return Ok(Some(Err(why)));
+    }
     let text = fs::read_to_string(&path)
         .map_err(|e| io::Error::new(e.kind(), format!("{DECLARATION}: {e}")))?;
     Ok(Some(

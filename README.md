@@ -176,6 +176,11 @@ stale_after: 2027-01-01T00:00:00+09:00   # optional: when to measure the state a
 - **The bundle is there:** `docs/`, `docs/index.md`, `docs/backlog/`, `docs/backlog/rules.md`, `docs/specs/`,
   `docs/specs/rules.md` and `docs/done/` exist, and the declaration with its `areas` can be read. Without them every other check would pass
   with nothing checked.
+- **Every name is compared exactly,** wherever docket looks for a file or a directory: a link's target, the files
+  above, the layers and the declaration. docket reads the names the directories hold instead of asking the
+  operating system, which on Windows also finds `README.md` for `readme.md`, `README.md.`, `README.md `, a stream
+  (`README.md:secret`) or a short name (`README~1.MD`). Linux and GitHub find none of them, so each fails, and the
+  message says what the disk has.
 - **The areas are distinct headings:** none is empty, has a space at either end or a line break, and no two differ only in case.
 - **Every backlog item keeps the format:** the fields above with their types, and non-empty Trigger, State and Details
   (and Resolution when closed). A field docket does not know passes as an extension, as OKF allows, unless it looks
@@ -189,9 +194,10 @@ stale_after: 2027-01-01T00:00:00+09:00   # optional: when to measure the state a
   title is written into the index with `[`, `]` and `\` escaped, so it stays the text of its own link. The one tag
   is a declared area, and the message lists the declared ones.
 - **Every link in `# Details` resolves,** with heading anchors computed as GitHub computes them. A path with a drive
-  letter (`C:/...`) fails: it names a file on one machine. Only a URL (`https:`, `mailto:`) is not checked, and a
-  file name with a line number (`check.rs:104`) is a path, not a URL. A path is separated with `/`: only Windows
-  reads a backslash as a separator, so a path with one fails. A link to a `.py` file names, in its text, a function
+  letter (`C:/...`) or a `file:` URL fails: it names a file on one machine. Only a URL (`https:`, `mailto:`) is not
+  checked, and a file name with a line number (`check.rs:104`) is a path, not a URL. A path is separated with `/`:
+  only Windows reads a backslash as a separator, so a path with one fails. A path that climbs above the repository
+  fails: GitHub serves only the repository. A link to a `.py` file names, in its text, a function
   or class defined there, at any depth. The file is parsed as Python, so a `def` line inside a string or a docstring
   does not count. The text is one name exactly as defined (``[`render_index`](../tests/bundle.py)``), not a call
   (`render_index()`) or a dotted path (`Bundle.render`); when it names nothing, the message says which name to write

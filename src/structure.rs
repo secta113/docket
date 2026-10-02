@@ -13,7 +13,7 @@ use std::io;
 use std::path::Path;
 
 use crate::layers::{DECLARATION, Declared, Layout, MISSING, declaration};
-use crate::source::relative_path;
+use crate::source::{exactly, relative_path};
 
 /// Whether `path` is `prefix` or inside it. Both are from the root, with `/`.
 fn within(path: &str, prefix: &str) -> bool {
@@ -54,7 +54,8 @@ pub fn problems(root: &Path) -> io::Result<Structure> {
         });
     };
     let mut found = Vec::new();
-    let present = |path: &str| root.join(path).exists();
+    // By the exact name: `Domain/` is `domain/` on Windows, and a directory of its own on Linux and GitHub
+    let present = |path: &str| exactly(root, path).is_ok();
 
     let mut any = false;
     for place in &declared.places {
@@ -71,10 +72,14 @@ pub fn problems(root: &Path) -> io::Result<Structure> {
                 "{} is declared absent, but {}/ exists: remove one or the other",
                 place.name, place.path
             )),
-            (false, false) => found.push(format!(
-                "{} is missing: {}/ (run `docket create`, or declare it in absent in {DECLARATION})",
-                place.name, place.path
-            )),
+            (false, false) => found.push(match exactly(root, &place.path) {
+                // A directory in another case: `docket create` would write into it on Windows, and fix nothing
+                Err(why) if why.contains(" is there") => format!("{} is {why}", place.name),
+                _ => format!(
+                    "{} is missing: {}/ (run `docket create`, or declare it in absent in {DECLARATION})",
+                    place.name, place.path
+                ),
+            }),
             (false, true) => any = true,
             (true, false) => {}
         }
@@ -151,7 +156,7 @@ fn outside(
 ) -> io::Result<BTreeSet<String>> {
     let scope = &layout.scope;
     let mut found = BTreeSet::new();
-    if !root.join(scope).is_dir() {
+    if !exactly(root, scope).is_ok_and(|path| path.is_dir()) {
         return Ok(found);
     }
     let walk = ignore::WalkBuilder::new(root)

@@ -11,7 +11,7 @@ use ruff_python_ast::statement_visitor::{StatementVisitor, walk_stmt};
 use ruff_python_ast::{PySourceType, Stmt};
 use unicode_general_category::{GeneralCategory, get_general_category};
 
-use crate::source::read_source;
+use crate::source::{Lookup, lookup, read_source};
 
 static LINK: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\[([^\]]*)\]\(([^)\s]+)\)").unwrap());
 // A URL scheme. RFC 3986 allows `.` in one, but no scheme in use has it, while a file name with a line number
@@ -19,6 +19,7 @@ static LINK: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\[([^\]]*)\]\(([^)\
 static URL: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[A-Za-z][A-Za-z0-9+-]*:").unwrap());
 // A drive letter has the form of a one-letter URL scheme. No scheme has one letter
 static DRIVE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[A-Za-z]:").unwrap());
+static FILE_URL: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)^file:").unwrap());
 
 /// The text without the parts GitHub does not render as text: HTML comments and fenced code blocks. Every check that
 /// reads the structure of a document (its sections, headings and links) reads this, so a heading or a link that a
@@ -198,12 +199,14 @@ pub fn links(text: &str) -> Vec<(String, String)> {
 /// Why the link does not resolve, or `None` when it does.
 ///
 /// `here` is the directory of the document that holds the link, for relative targets. A target starting with `/` is
-/// relative to `bundle_root`. A URL is not checked. A path with a drive letter (`C:/...`) fails: it names a file on one
-/// machine, which no other checkout and no reader on GitHub can follow. A path with `\` fails: only Windows reads it as
-/// a separator, so the same link would resolve on one machine and not on another. A link to a `.py` file names in its
-/// text a function or class that the file defines.
+/// relative to `bundle_root`. A URL is not checked. A path with a drive letter (`C:/...`) or a `file:` URL fails: it
+/// names a file on one machine, which no other checkout and no reader on GitHub can follow. A path with `\` fails: only
+/// Windows reads it as a separator, so the same link would resolve on one machine and not on another. For the same
+/// reason the file is found by its exact name (`source::lookup`), and a path that climbs above the repository fails.
+/// A link to a `.py` file names in its text a function or class that the file defines.
 pub fn broken(text: &str, target: &str, here: &Path, bundle_root: &Path) -> Option<String> {
-    if DRIVE.is_match(target) {
+    // A file: URL names a file on one machine as surely as a drive letter does
+    if DRIVE.is_match(target) || FILE_URL.is_match(target) {
         return Some(format!(
             "a path on one machine; link with / from the bundle root, or with a relative path: {target}"
         ));
@@ -219,13 +222,35 @@ pub fn broken(text: &str, target: &str, here: &Path, bundle_root: &Path) -> Opti
     if path.is_empty() {
         return Some(format!("no file in the link: {target}"));
     }
-    let full = match path.strip_prefix('/') {
-        Some(rest) => bundle_root.join(rest.trim_start_matches('/')),
-        None => here.join(path),
+    let (start, rel) = match path.strip_prefix('/') {
+        Some(rest) => (bundle_root, rest),
+        None => (here, path),
     };
-    if !full.is_file() {
-        return Some(format!("no such file: {target}"));
+    // GitHub serves the files of the repository only: a path that climbs above its root names nothing there
+    let repository = bundle_root.parent().unwrap_or(bundle_root);
+    let mut depth = start
+        .strip_prefix(repository)
+        .map_or(0, |inside| inside.components().count() as i64);
+    for part in rel.split('/') {
+        match part {
+            "" | "." => {}
+            ".." => depth -= 1,
+            _ => depth += 1,
+        }
+        if depth < 0 {
+            return Some(format!("a path outside the repository: {target}"));
+        }
     }
+    let full = match lookup(start, rel) {
+        Lookup::Found(full) if full.is_file() => full,
+        Lookup::Spelled(on_disk) => {
+            return Some(format!(
+                "no such file: {target} (the disk has {on_disk}: names are compared exactly, as Linux and GitHub \
+                 compare them)"
+            ));
+        }
+        _ => return Some(format!("no such file: {target}")),
+    };
     let source = match read_source(&full) {
         Ok(source) => source,
         Err(e) => return Some(format!("cannot read {target}: {e}")),
@@ -525,11 +550,44 @@ Text <!-- one line --> and text <!--
             // A link to a .py file names what it points at; with no name, any def would do
             ("", "../../tests/backlog_bundle.py"),
             ("``", "../../tests/backlog_bundle.py"),
+            // Each opens the file on Windows, and nothing on Linux or GitHub
+            ("another case", "/backlog/Rules.md"),
+            ("a directory in another case", "/Backlog/rules.md"),
+            ("a dot at the end", "/log.md."),
+            ("a space at the end", "/log.md%20"),
+            ("a directory with a dot at the end", "../backlog./rules.md"),
+            ("a stream", "/log.md:hidden"),
+            // A file: URL is a path on one machine too
+            (
+                "a file URL",
+                "file:///C:/Windows/System32/drivers/etc/hosts",
+            ),
+            ("a file URL in capitals", "FILE:///etc/hosts"),
+            // GitHub serves only the repository
+            ("above the repository", "../../../outside.md"),
         ];
         let found = reasons(root.path(), &bad);
         for ((text, target), why) in bad.iter().zip(&found) {
             assert!(why.is_some(), "{text} ({target}) passed");
         }
+        let said = |target: &str| reasons(root.path(), &[("x", target)]).remove(0).unwrap();
+        assert!(
+            said("/backlog/Rules.md").contains("the disk has backlog/rules.md"),
+            "{}",
+            said("/backlog/Rules.md")
+        );
+        assert!(said("../../../outside.md").contains("outside the repository"));
+    }
+
+    #[test]
+    fn a_stream_that_exists_is_not_found() {
+        // On Windows, `log.md:hidden` opens a stream of log.md once one is written: the operating system would find it
+        let root = tree();
+        let docs = root.path().join("docs");
+        if fs::write(docs.join("log.md:hidden"), "hidden\n").is_err() {
+            return; // Not NTFS: no streams, and nothing that could pass
+        }
+        assert!(reasons(root.path(), &[("x", "/log.md:hidden")])[0].is_some());
     }
 
     #[test]

@@ -30,7 +30,7 @@ use crate::bundle::{Bundle, Docs, RESERVED, backlog};
 use crate::frontmatter::split;
 use crate::layers::{DECLARATION, area_problems, areas};
 use crate::markdown::{broken, heading, links, visible};
-use crate::source::{read_source, relative_path};
+use crate::source::{exactly, read_source, relative_path};
 
 /// Directory (relative to docs/, "" for the root) -> the document types allowed in it
 const TYPES: [(&str, &[&str]); 4] = [
@@ -112,17 +112,20 @@ fn records(root: &Path) -> io::Result<Vec<Finding>> {
     let bundle = Bundle::new(root, areas);
 
     // The floor: the directories and the root index exist, and the backlog rules are found as a document. If a move
-    // or a rename makes the scan come back empty, the checks below see nothing and pass
+    // or a rename makes the scan come back empty, the checks below see nothing and pass. Each is found by its exact
+    // name: `Rules.md` is found as `rules.md` on Windows, and missing on Linux and GitHub
     let missing: Vec<String> = TYPES
         .iter()
-        .map(|(folder, _)| bundle.docs.join(folder))
-        .chain([
-            bundle.docs.join("index.md"),
-            bundle.docs.join("backlog").join("rules.md"),
-            bundle.docs.join("specs").join("rules.md"),
-        ])
-        .filter(|path| !path.exists())
-        .map(|path| format!("missing: {}", relative_path(&path, root)))
+        .map(|(folder, _)| format!("docs/{folder}"))
+        .chain(
+            [
+                "docs/index.md",
+                "docs/backlog/rules.md",
+                "docs/specs/rules.md",
+            ]
+            .map(String::from),
+        )
+        .filter_map(|rel| exactly(root, rel.trim_end_matches('/')).err())
         .collect();
     if !missing.is_empty() {
         add("the bundle is seen", missing);
@@ -145,8 +148,14 @@ fn records(root: &Path) -> io::Result<Vec<Finding>> {
         pairs(&unresolved(&details, root)),
     );
 
-    let log_path = bundle.docs.join("log.md");
-    if log_path.is_file() {
+    let log_path = exactly(root, "docs/log.md").and_then(|path| {
+        if path.is_file() {
+            Ok(path)
+        } else {
+            Err("docs/log.md is not a file".into())
+        }
+    });
+    if let Ok(log_path) = log_path {
         let log = read_source(&log_path)?;
         let names = file_names(&bundle.docs.join("backlog"))?;
         let dangling = dangling_backlog_refs(&log, &names);
@@ -158,11 +167,8 @@ fn records(root: &Path) -> io::Result<Vec<Finding>> {
                 .collect(),
         );
         add("the log keeps its structure", log_problems(&log));
-    } else {
-        add(
-            "the log keeps its structure",
-            vec!["missing: docs/log.md".into()],
-        );
+    } else if let Err(why) = log_path {
+        add("the log keeps its structure", vec![why]);
     }
 
     let mut out_of_place = misplaced(&concepts(&bundle.docs)?);
@@ -180,7 +186,11 @@ fn records(root: &Path) -> io::Result<Vec<Finding>> {
     let (files, _) = bundle.expected()?;
     let stale: Vec<String> = files
         .into_iter()
-        .filter(|(path, text)| read_source(path).ok().as_ref() != Some(text))
+        // Compared by the exact name, as the floor is: a `Rules.md` holding the rules is not `rules.md`
+        .filter(|(path, text)| {
+            let found = exactly(root, &relative_path(path, root)).ok();
+            found.and_then(|path| read_source(&path).ok()).as_ref() != Some(text)
+        })
         .map(|(path, _)| {
             format!(
                 "out of date, run `docket index`: {}",

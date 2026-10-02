@@ -189,6 +189,54 @@ fn each_broken_rule_fails_under_its_check() {
 }
 
 #[test]
+fn a_name_in_another_case_is_missing() {
+    // Windows opens each of these under the name docket looks for; Linux and GitHub do not. Renamed in two steps, as
+    // a case-only rename is not a rename on Windows
+    let cases = [
+        (
+            "docs/backlog/rules.md",
+            "docs/backlog/Rules.md",
+            "the bundle is seen",
+        ),
+        ("docs/log.md", "docs/Log.md", "the log keeps its structure"),
+        ("domain", "Domain", "the tree matches .config/docket.toml"),
+        (
+            ".config/docket.toml",
+            ".config/Docket.toml",
+            "the tree matches .config/docket.toml",
+        ),
+        // Not in the floor: only the comparison with what docket writes sees it
+        (
+            "docs/backlog/index.md",
+            "docs/backlog/Index.md",
+            "every generated file is up to date",
+        ),
+    ];
+    for (from, to, check) in cases {
+        let root = clean_repo();
+        let (from, to) = (root.path().join(from), root.path().join(to));
+        let between = root.path().join("renaming");
+        fs::rename(&from, &between).unwrap();
+        fs::rename(&between, &to).unwrap();
+        let out = run(&["--root", &root_arg(root.path()), "check"]);
+        assert_eq!(out.status.code(), Some(1), "{to:?}: {}", stdout(&out));
+        assert!(
+            stdout(&out).contains(&format!("{check}:")),
+            "{to:?}: {}",
+            stdout(&out)
+        );
+        // Where docket names the file itself, it says what the disk has instead
+        if check != "every generated file is up to date" {
+            assert!(
+                stdout(&out).contains("is there"),
+                "{to:?}: {}",
+                stdout(&out)
+            );
+        }
+    }
+}
+
+#[test]
 fn an_epic_and_its_parts_are_checked_together() {
     let spec = |epic: &str, status: &str| {
         format!(
