@@ -3,13 +3,18 @@
 docket keeps a project's structure from drifting while LLMs and people change it. It keeps two structures:
 
 - **The layers:** which part of the code may import which (`handler`, `application`, `domain`, `infrastructure`,
-  `utils`, and an optional `ui`). docket makes them when a project starts and checks them on every run, so the
-  direction of dependencies stays what it was meant to be.
+  `utils`, and an optional `ui`). Code that cannot be split into these layers mixes responsibilities, so the layers
+  are how an LLM, or a person, is made to split it: every piece of code has to land in a layer whose role and allowed
+  imports are written down. docket makes them when a project starts and checks them on every run, so the direction
+  of dependencies stays what it was meant to be.
 - **The specs and records:** what is open, what is agreed, what is finished and why. A backlog (open defects and
   postponed work, each with a trigger, a state and a deadline), specs, and a log, each kept to strict rules.
 
 ## Principles
 
+- **The declaration is the truth, and docket does not repair.** The structure a project declares is the structure. A
+  tree that differs from it fails, either way, and someone decides whether the tree or the declaration is wrong;
+  docket changes the tree only when asked.
 - **Every rule has a check that can fail.** A rule without a check is only a label, and soon drifts.
 - **A check with nothing to check fails.** A check that passes on an empty tree protects nothing.
 - **The rules come with the tool.** A project pins one version of docket, and takes improvements to the rules by
