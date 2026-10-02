@@ -580,6 +580,11 @@ fn each_difference_from_the_declaration_fails() {
             "code outside the layers: main.py",
             Box::new(|r| plant_file(r, "main.py")),
         ),
+        // Windows runs it with Python all the same
+        (
+            "code outside the layers: stray.PY",
+            Box::new(|r| plant_file(r, "stray.PY")),
+        ),
         (
             "missing: .config/docket.toml",
             Box::new(|r| fs::remove_file(r.join(".config/docket.toml")).unwrap()),

@@ -169,11 +169,15 @@ impl Layout {
     }
 
     /// Whether a file name is code in this stack.
+    ///
+    /// Case does not count: Windows runs `stray.PY` with Python and reads `cargo.toml` as `Cargo.toml`, so either is
+    /// code that has to sit in a layer.
     pub fn is_code(&self, file_name: &str) -> bool {
+        let name = file_name.to_ascii_lowercase();
         match self.code.strip_prefix('*') {
             Some("") => true,
-            Some(suffix) => file_name.ends_with(suffix),
-            None => file_name == self.code,
+            Some(suffix) => name.ends_with(&suffix.to_ascii_lowercase()),
+            None => name == self.code.to_ascii_lowercase(),
         }
     }
 }
@@ -539,9 +543,12 @@ mod tests {
     fn code_is_matched_by_name() {
         let mut layout = layout("python").unwrap();
         assert!(layout.is_code("a.py") && !layout.is_code("a.pyi") && !layout.is_code("README.md"));
+        // Windows runs these with Python all the same
+        assert!(layout.is_code("stray.PY") && layout.is_code("Stray.Py"));
         layout.code = "*".into();
         assert!(layout.is_code("anything"));
         layout.code = "Cargo.toml".into();
         assert!(layout.is_code("Cargo.toml") && !layout.is_code("Cargo.lock"));
+        assert!(layout.is_code("cargo.toml") && layout.is_code("CARGO.TOML"));
     }
 }

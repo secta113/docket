@@ -293,7 +293,8 @@ pub fn broken(text: &str, target: &str, here: &Path, bundle_root: &Path) -> Opti
         Ok(source) => source,
         Err(e) => return Some(format!("cannot read {target}: {e}")),
     };
-    if path.ends_with(".py") {
+    // In any case: `bundle.PY` is a Python file on Windows, and its link names a definition as any other does
+    if path.to_ascii_lowercase().ends_with(".py") {
         let name = text.trim().trim_matches('`').trim();
         if name.is_empty() {
             return Some(format!(
@@ -538,6 +539,11 @@ Text <!-- one line --> and text <!--
         .unwrap();
         fs::write(docs.join("log.md"), "# Log\n\n<!--\n### Task name\n-->\n").unwrap();
         fs::write(
+            root.path().join("tests/upper.PY"),
+            "def shouted():\n    pass\n",
+        )
+        .unwrap();
+        fs::write(
             root.path().join("tests/backlog_bundle.py"),
             concat!(
                 "\"\"\"\n",
@@ -591,6 +597,7 @@ Text <!-- one line --> and text <!--
             ("`method`", "../../tests/backlog_bundle.py"),
             ("`inner`", "../../tests/backlog_bundle.py"),
             ("`conditional`", "../../tests/backlog_bundle.py"),
+            ("`shouted`", "../../tests/upper.PY"),
             ("a URL is not checked", "https://example.com/okf"),
             ("a scheme with a plus", "coap+tcp://example.com/x"),
             ("mail", "mailto:someone@example.com"),
@@ -627,6 +634,8 @@ Text <!-- one line --> and text <!--
             // A link to a .py file names what it points at; with no name, any def would do
             ("", "../../tests/backlog_bundle.py"),
             ("``", "../../tests/backlog_bundle.py"),
+            // A .PY file is Python too: its link names a definition
+            ("`nothing_here`", "../../tests/upper.PY"),
             // Each opens the file on Windows, and nothing on Linux or GitHub
             ("another case", "/backlog/Rules.md"),
             ("a directory in another case", "/Backlog/rules.md"),

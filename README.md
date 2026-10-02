@@ -91,7 +91,7 @@ is written once per stack:
 
 | Stack | A layer is | A `ui` level is | Code docket looks at |
 |---|---|---|---|
-| `python` | `<layer>/__init__.py`, the role as its docstring | `ui/<level>/__init__.py` | `.py` files anywhere, except `tests/` and `ci.py` |
+| `python` | `<layer>/__init__.py`, the role as its docstring | `ui/<level>/__init__.py` | `.py` files anywhere (`.PY` too), except `tests/` and `ci.py` |
 | `typescript` | `src/<layer>/index.ts`, the role as a doc comment | `src/ui/<level>/index.ts` (React) | every file in `src/` |
 | `rust` | a crate, `crates/<layer>/` (`handler` a binary), the role as `//!` | none: Rust has no `ui` yet | every crate in `crates/` |
 
@@ -100,7 +100,8 @@ check` checks only the records and prints that it did not check the layers. It i
 flag, so the structure check is never switched off where the declaration still declares layers.
 
 A level of `ui` is declared absent by its dotted name (`absent = ["ui.templates"]`). Files `.gitignore` excludes and
-hidden files are not looked at, so a virtual environment or a build directory is not code.
+hidden files are not looked at, so a virtual environment or a build directory is not code. A code file is matched in any
+case (`stray.PY`, `cargo.toml`): Windows runs or reads it all the same.
 
 ## The records
 
