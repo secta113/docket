@@ -15,18 +15,13 @@ fn stdout(out: &Output) -> String {
     String::from_utf8_lossy(&out.stdout).into_owned()
 }
 
-/// A repository with an empty bundle: the backlog rules, and the spec directories.
+/// A repository with an empty bundle: the directories of `docs/`, nothing in them.
 fn repo() -> tempfile::TempDir {
     let root = tempfile::tempdir().unwrap();
     let docs = root.path().join("docs");
     for folder in ["backlog", "specs", "done"] {
         fs::create_dir_all(docs.join(folder)).unwrap();
     }
-    fs::write(
-        docs.join("backlog/rules.md"),
-        "---\ntype: Guide\ntitle: Backlog rules\ndescription: What goes here.\n---\n\n# What goes here\n",
-    )
-    .unwrap();
     root
 }
 
@@ -75,7 +70,7 @@ fn each_broken_rule_fails_under_its_check() {
         )
     };
     // Each case breaks one rule of a clean repository: (the check that must name it, what to write)
-    let cases: [(&str, &str, String); 12] = [
+    let cases: [(&str, &str, String); 13] = [
         ("the bundle is seen", "docs/backlog/rules.md", String::new()),
         (
             "every backlog document keeps the format",
@@ -119,9 +114,15 @@ fn each_broken_rule_fails_under_its_check() {
             "---\ntype: Spec\ntitle: A\ndescription: B.\nstatus: stable\n---\n".into(),
         ),
         (
-            "every index is up to date",
+            "every generated file is up to date",
             "docs/backlog/index.md",
             "edited by hand\n".into(),
+        ),
+        // The rules a project reads are the rules its docket checks
+        (
+            "every generated file is up to date",
+            "docs/backlog/rules.md",
+            "---\ntype: Guide\ntitle: Backlog rules\ndescription: Our own.\n---\n".into(),
         ),
         (
             "no spec sits at the repository root",
@@ -159,6 +160,7 @@ fn index_writes_every_index_file() {
         String::from_utf8_lossy(&out.stderr)
     );
     for path in [
+        "docs/backlog/rules.md",
         "docs/index.md",
         "docs/backlog/index.md",
         "docs/specs/index.md",
@@ -173,7 +175,7 @@ fn index_writes_every_index_file() {
     }
     let backlog = fs::read_to_string(root.path().join("docs/backlog/index.md")).unwrap();
     assert!(
-        backlog.contains("* [Backlog rules](rules.md) - What goes here."),
+        backlog.contains("* [Backlog rules](rules.md) - What goes in docs/backlog/"),
         "{backlog}"
     );
 }

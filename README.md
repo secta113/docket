@@ -45,7 +45,7 @@ cargo build --release   # the binary is target/release/docket (docket.exe on Win
 
 ```sh
 docket --root <repository> check   # check the records; exits 1 when a rule is broken
-docket --root <repository> index   # write every index.md from the frontmatter
+docket --root <repository> index   # write every generated file in docs/ (the index files and the backlog rules)
 ```
 
 `--root` defaults to the current directory. The records are read from `<repository>/docs`.
@@ -66,7 +66,7 @@ docs/
   index.md          generated
   log.md            what was done, newest first
   backlog/
-    rules.md        the backlog rules (type: Guide)
+    rules.md        generated: the backlog rules (type: Guide)
     index.md        generated
     <slug>.md       one item per file (type: Backlog Item)
   specs/            specs in progress (type: Spec, status: draft or stable)
@@ -129,7 +129,9 @@ stale_after: 2027-01-01T00:00:00+09:00   # optional: when to measure the state a
   The names OKF reserves appear only where docket writes and reads them: `index.md` in `docs/` and in each directory
   of documents, `log.md` in `docs/`. A markdown file is named `.md`, in lowercase: GitHub shows a `.MD` file, but
   docket would not read it.
-- **Every index file equals what `docket index` writes.** Nobody maintains a list by hand.
+- **Every file docket generates equals what `docket index` writes:** the index files, so nobody maintains a list by
+  hand, and `docs/backlog/rules.md`, so the rules a project reads are the rules its docket checks. A project's own
+  rules go in another guide in `docs/backlog/`.
 - **No spec sits at the repository root.**
 
 The frontmatter is read as YAML 1.2: quoting a value never changes whether it passes. Its closing `---` may end the

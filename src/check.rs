@@ -3,7 +3,8 @@
 //! - **The backlog works as a backlog**: every document keeps the format, every link in `# Details` resolves, and every
 //!   backlog item the log points to exists.
 //! - **`docs/` is one OKF bundle**: every document is a known type in the directory for its type, a spec sits in the
-//!   directory for its status, every index file equals what `docket index` writes, and no spec sits at the root.
+//!   directory for its status, every file docket generates (the index files and the backlog rules) equals what
+//!   `docket index` writes, and no spec sits at the root.
 //! - **The log keeps the OKF log structure**: every second-level heading is a date, newest first, and the entries
 //!   are a flat list of list items under those dates.
 //!
@@ -142,7 +143,7 @@ pub fn check(root: &Path) -> io::Result<Vec<Finding>> {
             )
         })
         .collect();
-    add("every index is up to date", stale);
+    add("every generated file is up to date", stale);
     let names = file_names(root)?;
     add(
         "no spec sits at the repository root",

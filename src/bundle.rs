@@ -20,6 +20,9 @@ pub const RESERVED: [&str; 2] = ["index.md", "log.md"];
 /// The notice at the top of every generated index. An HTML comment, so OKF readers do not see it
 pub const GENERATED: &str = "<!-- Generated from the frontmatter by `docket index`. Do not edit: `docket check` fails \
                              when this file differs from what `docket index` writes. -->";
+/// The backlog rules. docket writes them like an index file, so the rules a project reads are the rules its docket
+/// checks
+pub const RULES: &str = include_str!("../records/rules.md");
 /// The bundle-root index links to these, in this order
 const ROOT_ENTRIES: [(&str, &str, &str); 4] = [
     ("Backlog", "backlog/", "Open problems and postponed work."),
@@ -106,10 +109,15 @@ impl Bundle {
         Ok(docs)
     }
 
-    /// Every index file in the bundle -> what it should contain now, and the documents left out of them.
+    /// Every file docket generates in the bundle (the index files and the backlog rules) -> what it should contain
+    /// now, and the documents left out of the index files.
     pub fn expected(&self) -> io::Result<(Vec<(PathBuf, String)>, Problems)> {
-        let backlog = backlog(&self.read_folder("backlog")?);
+        // The rules as they are about to be written, so the backlog index lists them on the run that writes them
+        let mut docs = self.read_folder("backlog")?;
+        docs.insert("rules.md".into(), RULES.into());
+        let backlog = backlog(&docs);
         let mut files = vec![
+            (self.docs.join("backlog").join("rules.md"), RULES.into()),
             (self.docs.join("index.md"), render_root()),
             (
                 self.docs.join("backlog").join("index.md"),

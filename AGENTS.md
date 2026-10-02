@@ -8,6 +8,7 @@ and why, is in `README.md`.
 | Path | Content |
 |---|---|
 | `src/` | The tool, one module per concern (below) |
+| `records/` | The records skeleton, built into the binary: `rules.md` (the backlog rules docket writes into every project) |
 | `tests/` | Tests that run the built binary as a user runs it (`cli.rs`) |
 | `xtask/` | The CI entry point (`cargo xtask ci`) |
 | `.cargo/` | The `cargo xtask` alias |
@@ -28,7 +29,7 @@ Also tracked, as in most repositories: `.gitattributes`, `.gitignore`, `Cargo.lo
 | `main.rs` | The command line: `docket check` and `docket index` |
 | `lib.rs` | The library the command line calls |
 | `check.rs` | Every rule `docket check` runs, each with its floor |
-| `bundle.rs` | Reading `docs/` as one OKF bundle, and rendering the index files |
+| `bundle.rs` | Reading `docs/` as one OKF bundle, and the files docket generates in it (the index files and the backlog rules) |
 | `schema.rs` | The frontmatter of each document type |
 | `frontmatter.rs` | Splitting a document into frontmatter and the sections of its body |
 | `markdown.rs` | What GitHub renders as text, headings and their anchors as GitHub computes them, and links |
