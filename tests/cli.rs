@@ -75,7 +75,7 @@ fn each_broken_rule_fails_under_its_check() {
         )
     };
     // Each case breaks one rule of a clean repository: (the check that must name it, what to write)
-    let cases: [(&str, &str, String); 18] = [
+    let cases: [(&str, &str, String); 20] = [
         ("the bundle is seen", "docs/backlog/rules.md", String::new()),
         (
             "every backlog document keeps the format",
@@ -129,6 +129,12 @@ fn each_broken_rule_fails_under_its_check() {
             "docs/backlog/rules.md",
             "---\ntype: Guide\ntitle: Backlog rules\ndescription: Our own.\n---\n".into(),
         ),
+        (
+            "every generated file is up to date",
+            "docs/specs/rules.md",
+            "---\ntype: Guide\ntitle: Spec rules\ndescription: Our own.\n---\n".into(),
+        ),
+        ("the bundle is seen", "docs/specs/rules.md", String::new()),
         (
             "no spec sits at the repository root",
             "genre_spec.md",
@@ -236,6 +242,7 @@ fn index_writes_every_index_file() {
     );
     for path in [
         "docs/backlog/rules.md",
+        "docs/specs/rules.md",
         "docs/index.md",
         "docs/backlog/index.md",
         "docs/specs/index.md",
@@ -252,6 +259,11 @@ fn index_writes_every_index_file() {
     assert!(
         backlog.contains("* [Backlog rules](rules.md) - What goes in docs/backlog/"),
         "{backlog}"
+    );
+    let specs = fs::read_to_string(root.path().join("docs/specs/index.md")).unwrap();
+    assert!(
+        specs.contains("# Guides\n\n* [Spec rules](rules.md) - What goes in docs/specs/"),
+        "{specs}"
     );
 }
 
@@ -385,10 +397,12 @@ fn create_makes_each_stack_once_and_check_passes_on_it() {
         let arg = root_arg(root.path());
         let first = run(&["--root", &arg, "create"]);
         assert!(first.status.success(), "{stack}: {}", stdout(&first));
-        for path in made
-            .iter()
-            .chain(&["docs/log.md", "docs/backlog/rules.md", "docs/index.md"])
-        {
+        for path in made.iter().chain(&[
+            "docs/log.md",
+            "docs/backlog/rules.md",
+            "docs/specs/rules.md",
+            "docs/index.md",
+        ]) {
             assert!(
                 root.path().join(path).is_file(),
                 "{stack}: {path} was not made"

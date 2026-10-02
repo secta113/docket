@@ -9,7 +9,7 @@
 //! - **An epic closes after its parts**: a part's `epic` names another spec, one level deep, and no epic in
 //!   `docs/done/` has a part in `docs/specs/`.
 //! - **`docs/` is one OKF bundle**: every document is a known type in the directory for its type, a spec sits in the
-//!   directory for its status, every file docket generates (the index files and the backlog rules) equals what
+//!   directory for its status, every file docket generates (the index files and the rules) equals what
 //!   `docket index` writes, and no spec sits at the root.
 //! - **The log keeps the OKF log structure**: every second-level heading is a date, newest first, and the entries
 //!   are a flat list of list items under those dates.
@@ -36,7 +36,7 @@ use crate::source::{read_source, relative_path};
 const TYPES: [(&str, &[&str]); 4] = [
     ("", &["Guide"]),
     ("backlog", &["Backlog Item", "Guide"]),
-    ("specs", &["Spec"]),
+    ("specs", &["Spec", "Guide"]),
     ("done", &["Spec"]),
 ];
 
@@ -119,6 +119,7 @@ fn records(root: &Path) -> io::Result<Vec<Finding>> {
         .chain([
             bundle.docs.join("index.md"),
             bundle.docs.join("backlog").join("rules.md"),
+            bundle.docs.join("specs").join("rules.md"),
         ])
         .filter(|path| !path.exists())
         .map(|path| format!("missing: {}", relative_path(&path, root)))

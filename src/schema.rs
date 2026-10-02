@@ -201,6 +201,20 @@ pub fn backlog_doc(text: &str) -> Result<BacklogDoc, String> {
     Ok(BacklogDoc::Item(item, sections))
 }
 
+/// A guide, or why it breaks the format. `None` when the document's type is not `Guide`.
+pub fn guide_doc(text: &str) -> Option<Result<Guide, String>> {
+    // No frontmatter: not a guide, and the reader of the document's own type says why
+    let Ok((meta, _)) = split(text) else {
+        return None;
+    };
+    let mut fields = Fields::new(&meta);
+    if fields.peek("type") != Some(&Yaml::String("Guide".into())) {
+        return None;
+    }
+    let guide = guide(&mut fields);
+    Some(fields.finish(guide))
+}
+
 /// A spec in `docs/<folder>/`, or why it breaks the format or does not belong in that folder.
 pub fn spec(folder: &str, text: &str) -> Result<(Spec, Sections), String> {
     let (meta, sections) = split(text)?;

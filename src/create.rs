@@ -4,7 +4,7 @@
 //!   files. A present layer is the project's, and nothing in it is touched.
 //!   A repository that keeps records only (`stack = "none"`) has no layers to make.
 //! - The records skeleton: the directories of `docs/`, `docs/log.md` with its title when it does not exist, and the
-//!   generated files (the index files and `docs/backlog/rules.md`), which docket rewrites.
+//!   generated files (the index files, `docs/backlog/rules.md` and `docs/specs/rules.md`), which docket rewrites.
 //!
 //! It never overwrites a file it does not generate, and never moves or deletes one. It runs when a project starts, and
 //! again when its declaration is changed on purpose; it never runs by itself, so a layer removed by mistake fails the

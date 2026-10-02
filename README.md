@@ -48,7 +48,7 @@ cargo build --release   # the binary is target/release/docket (docket.exe on Win
 docket --root <repository> init --stack python  # write .config/docket.toml, once
 docket --root <repository> create  # make the layers .config/docket.toml declares, and the records skeleton
 docket --root <repository> check   # check the layers and the records; exits 1 when a rule is broken
-docket --root <repository> index   # write every generated file in docs/ (the index files and the backlog rules)
+docket --root <repository> index   # write every generated file in docs/ (the index files and the rules)
 ```
 
 `--root` defaults to the current directory. The declaration is read from `<repository>/.config/docket.toml`, and the
@@ -113,6 +113,7 @@ docs/
     index.md        generated
     <slug>.md       one item per file (type: Backlog Item)
   specs/            specs in progress (type: Spec, status: draft or stable)
+    rules.md        generated: the spec rules (type: Guide)
     index.md        generated
   done/             closed specs (type: Spec, status: deprecated)
     index.md        generated
@@ -172,8 +173,8 @@ stale_after: 2027-01-01T00:00:00+09:00   # optional: when to measure the state a
   and `unchecked`. A path in `unchecked` exists and neither holds nor sits in a layer, so a layer cannot be switched
   off by listing it. At least one layer is present: with every layer declared absent, nothing would be checked.
 
-- **The bundle is there:** `docs/`, `docs/index.md`, `docs/backlog/`, `docs/backlog/rules.md`, `docs/specs/` and
-  `docs/done/` exist, and the declaration with its `areas` can be read. Without them every other check would pass
+- **The bundle is there:** `docs/`, `docs/index.md`, `docs/backlog/`, `docs/backlog/rules.md`, `docs/specs/`,
+  `docs/specs/rules.md` and `docs/done/` exist, and the declaration with its `areas` can be read. Without them every other check would pass
   with nothing checked.
 - **The areas are distinct headings:** none is empty or has a space at either end, and no two differ only in case.
 - **Every backlog item keeps the format:** the fields above with their types, and non-empty Trigger, State and Details
@@ -211,8 +212,8 @@ stale_after: 2027-01-01T00:00:00+09:00   # optional: when to measure the state a
   of documents, `log.md` in `docs/`. A markdown file is named `.md`, in lowercase: GitHub shows a `.MD` file, but
   docket would not read it.
 - **Every file docket generates equals what `docket index` writes:** the index files, so nobody maintains a list by
-  hand, and `docs/backlog/rules.md`, so the rules a project reads are the rules its docket checks. A project's own
-  rules go in another guide in `docs/backlog/`.
+  hand, and `docs/backlog/rules.md` and `docs/specs/rules.md`, so the rules a project reads are the rules its docket
+  checks. A project's own rules go in another guide in `docs/backlog/` or `docs/specs/`.
 - **No spec sits at the repository root.**
 
 The frontmatter is read as YAML 1.2: quoting a value never changes whether it passes. Its closing `---` may end the

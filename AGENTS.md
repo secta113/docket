@@ -9,7 +9,7 @@ and why, is in `README.md`.
 |---|---|
 | `src/` | The tool, one module per concern (below) |
 | `layers/` | The layer definitions, built into the binary: `table.toml` (what the layers are, in every stack) and one layout per stack (`python.toml`, `typescript.toml`, `rust.toml`: where each layer lives and the files that make it) |
-| `records/` | The records skeleton, built into the binary: `rules.md` (the backlog rules docket writes into every project) and `log.md` (the log `docket create` starts) |
+| `records/` | The records skeleton, built into the binary: `rules.md` and `spec-rules.md` (the backlog rules and the spec rules docket writes into every project), and `log.md` (the log `docket create` starts) |
 | `tests/` | Tests that run the built binary as a user runs it (`cli.rs`) |
 | `xtask/` | The CI entry point (`cargo xtask ci`) |
 | `.cargo/` | The `cargo xtask` alias |
@@ -34,7 +34,7 @@ Also tracked, as in most repositories: `.gitattributes`, `.gitignore`, `Cargo.lo
 | `structure.rs` | The structure check: the tree agrees with `.config/docket.toml`, either way |
 | `init.rs` | `docket init`: writing a project's declaration, once |
 | `create.rs` | `docket create`: making the layers and the records skeleton a project lacks |
-| `bundle.rs` | Reading `docs/` as one OKF bundle, and the files docket generates in it (the index files and the backlog rules) |
+| `bundle.rs` | Reading `docs/` as one OKF bundle, and the files docket generates in it (the index files and the rules) |
 | `schema.rs` | The frontmatter of each document type |
 | `frontmatter.rs` | Splitting a document into frontmatter and the sections of its body |
 | `markdown.rs` | What GitHub renders as text, headings and their anchors as GitHub computes them, and links |

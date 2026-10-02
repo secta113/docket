@@ -12,7 +12,7 @@ use crate::frontmatter::Sections;
 use crate::layers::DECLARATION;
 use crate::schema::{
     BacklogDoc, CLOSED_SECTION, DeadlineKind, Guide, Item, SPEC_FOLDERS, Spec, Status, Time,
-    backlog_doc, spec,
+    backlog_doc, guide_doc, spec,
 };
 use crate::source::read_source;
 
@@ -24,6 +24,10 @@ pub const GENERATED: &str = "<!-- Generated from the frontmatter by `docket inde
 /// The backlog rules. docket writes them like an index file, so the rules a project reads are the rules its docket
 /// checks
 pub const RULES: &str = include_str!("../records/rules.md");
+/// The spec rules, written like the backlog rules
+pub const SPEC_RULES: &str = include_str!("../records/spec-rules.md");
+/// The one directory of specs that holds guides: the spec rules, and any a project adds
+const GUIDES_AMONG_SPECS: &str = "specs";
 /// The log as `docket create` makes it. From then on it is the project's
 pub const LOG: &str = include_str!("../records/log.md");
 /// The bundle-root index links to these, in this order
@@ -70,29 +74,40 @@ pub fn backlog(docs: &Docs, areas: &[String]) -> Backlog {
     out
 }
 
-/// The specs of `docs/<folder>/` that pass, and why the others do not. A spec whose area is not among `areas` does not
-/// pass.
-pub fn specs(
-    folder: &str,
-    docs: &Docs,
-    areas: &[String],
-) -> (BTreeMap<String, (Spec, Sections)>, Problems) {
-    let mut passed = BTreeMap::new();
-    let mut problems = Problems::new();
+/// The documents of one spec directory, sorted out.
+#[derive(Debug, Default)]
+pub struct SpecFolder {
+    pub specs: BTreeMap<String, (Spec, Sections)>,
+    /// Only `docs/specs/` holds guides, as the spec rules
+    pub guides: BTreeMap<String, Guide>,
+    pub problems: Problems,
+}
+
+/// The documents of `docs/<folder>/`: the specs and guides that pass, and why the others do not. A spec whose area is
+/// not among `areas` does not pass.
+pub fn specs(folder: &str, docs: &Docs, areas: &[String]) -> SpecFolder {
+    let mut out = SpecFolder::default();
     for (name, text) in docs {
-        match spec(folder, text) {
-            Ok((spec, _)) if !areas.contains(&spec.tag) => {
-                problems.insert(name.clone(), undeclared(&spec.tag, areas));
+        let guide = (folder == GUIDES_AMONG_SPECS)
+            .then(|| guide_doc(text))
+            .flatten();
+        match (guide, spec(folder, text)) {
+            (Some(Ok(guide)), _) => {
+                out.guides.insert(name.clone(), guide);
             }
-            Ok(parsed) => {
-                passed.insert(name.clone(), parsed);
+            (Some(Err(why)), _) | (None, Err(why)) => {
+                out.problems.insert(name.clone(), why);
             }
-            Err(why) => {
-                problems.insert(name.clone(), why);
+            (None, Ok((spec, _))) if !areas.contains(&spec.tag) => {
+                out.problems
+                    .insert(name.clone(), undeclared(&spec.tag, areas));
+            }
+            (None, Ok(parsed)) => {
+                out.specs.insert(name.clone(), parsed);
             }
         }
     }
-    (passed, problems)
+    out
 }
 
 /// The specs of `docs/specs/` and `docs/done/`, read together: a part names its epic by slug, in either directory.
@@ -100,7 +115,9 @@ pub fn specs(
 pub struct Specs {
     /// Directory -> file name -> the spec, for the specs that pass
     pub folders: BTreeMap<&'static str, BTreeMap<String, (Spec, Sections)>>,
-    /// `<directory>/<file name>` -> why the spec is left out of the index files
+    /// Directory -> file name -> the guide
+    pub guides: BTreeMap<&'static str, BTreeMap<String, Guide>>,
+    /// `<directory>/<file name>` -> why the document is left out of the index files
     pub problems: Problems,
 }
 
@@ -153,10 +170,12 @@ impl Specs {
 pub fn all_specs(folders: &[(&'static str, Docs)], areas: &[String]) -> Specs {
     let mut out = Specs::default();
     for (folder, docs) in folders {
-        let (passed, bad) = specs(folder, docs, areas);
-        out.folders.insert(folder, passed);
+        let read = specs(folder, docs, areas);
+        out.folders.insert(folder, read.specs);
+        out.guides.insert(folder, read.guides);
         out.problems.extend(
-            bad.into_iter()
+            read.problems
+                .into_iter()
                 .map(|(name, why)| (format!("{folder}/{name}"), why)),
         );
     }
@@ -199,7 +218,10 @@ pub fn all_specs(folders: &[(&'static str, Docs)], areas: &[String]) -> Specs {
                         ),
                         None => continue,
                     },
-                    None if folders.iter().any(|(_, docs)| docs.contains_key(&file)) => {
+                    None if folders.iter().any(|(folder, _)| {
+                        out.problems.contains_key(&format!("{folder}/{file}"))
+                    }) =>
+                    {
                         format!("{epic} is left out of the index files itself: fix it first")
                     }
                     None => format!(
@@ -273,6 +295,10 @@ impl Bundle {
                 render_backlog(&backlog.items, &backlog.guides, &self.areas),
             ),
         ];
+        files.push((
+            self.docs.join(GUIDES_AMONG_SPECS).join("rules.md"),
+            SPEC_RULES.into(),
+        ));
         let mut problems = backlog.problems;
         let specs = self.read_specs()?;
         for (folder, _) in SPEC_FOLDERS {
@@ -285,12 +311,18 @@ impl Bundle {
         Ok((files, problems))
     }
 
-    /// Every spec of `docs/specs/` and `docs/done/`, checked one by one and against each other.
+    /// Every spec of `docs/specs/` and `docs/done/`, checked one by one and against each other. The spec rules are read
+    /// as docket writes them, so the index lists them on the run that writes them.
     pub fn read_specs(&self) -> io::Result<Specs> {
-        let folders = SPEC_FOLDERS
+        let mut folders = SPEC_FOLDERS
             .iter()
             .map(|(folder, _)| Ok((*folder, self.read_folder(folder)?)))
             .collect::<io::Result<Vec<_>>>()?;
+        for (folder, docs) in &mut folders {
+            if *folder == GUIDES_AMONG_SPECS {
+                docs.insert("rules.md".into(), SPEC_RULES.into());
+            }
+        }
         Ok(all_specs(&folders, &self.areas))
     }
 }
@@ -336,14 +368,7 @@ pub fn render_backlog(
     areas: &[String],
 ) -> String {
     let mut out = vec![GENERATED.to_string()];
-    if !guides.is_empty() {
-        out.extend(["".into(), "# Guides".into(), "".into()]);
-        out.extend(
-            guides.iter().map(|(name, guide)| {
-                format!("* [{}]({name}) - {}", guide.title, guide.description)
-            }),
-        );
-    }
+    out.extend(guide_section(guides));
     let open: Vec<(&String, &(Item, Sections))> = items
         .iter()
         .filter(|(_, (item, _))| item.status == Status::Stable)
@@ -380,6 +405,20 @@ pub fn render_backlog(
         }
     }
     out.join("\n") + "\n"
+}
+
+/// The guides of a directory, first in its index so the rules are found before the records. Nothing when it has none.
+fn guide_section(guides: &BTreeMap<String, Guide>) -> Vec<String> {
+    if guides.is_empty() {
+        return Vec::new();
+    }
+    let mut out = vec!["".into(), "# Guides".into(), "".into()];
+    out.extend(
+        guides
+            .iter()
+            .map(|(name, guide)| format!("* [{}]({name}) - {}", guide.title, guide.description)),
+    );
+    out
 }
 
 fn open_line(name: &str, item: &Item, sections: &Sections) -> String {
@@ -445,6 +484,9 @@ pub fn render_specs(folder: &str, all: &Specs, areas: &[String]) -> String {
         )
     };
     let mut out = vec![GENERATED.to_string()];
+    if let Some(guides) = all.guides.get(folder) {
+        out.extend(guide_section(guides));
+    }
     for area in areas {
         let top: Vec<_> = here
             .iter()
@@ -667,7 +709,11 @@ Not yet. Measured by hand.
         );
         let spec =
             "---\ntype: Spec\ntitle: S\ndescription: D.\ntags: [nowhere]\nstatus: stable\n---\n";
-        let (passed, problems) = specs(
+        let SpecFolder {
+            specs: passed,
+            problems,
+            ..
+        } = specs(
             "specs",
             &[("s.md".to_string(), spec.to_string())].into(),
             &[],
@@ -824,6 +870,12 @@ Not yet. Measured by hand.
                 spec_doc("p", "operations", Some("broken"), false),
                 "left out of the index",
             ),
+            // The spec rules sit among the specs, but are a guide
+            (
+                "a guide",
+                spec_doc("p", "operations", Some("rules"), false),
+                "names no spec",
+            ),
         ];
         for (name, part, said) in cases {
             let all = all_specs(
@@ -833,6 +885,7 @@ Not yet. Measured by hand.
                         spec_doc("top", "operations", None, false),
                         spec_doc("mid", "operations", Some("top"), false),
                         broken.clone(),
+                        ("rules.md".to_string(), SPEC_RULES.to_string()),
                     ],
                     vec![],
                 ),
