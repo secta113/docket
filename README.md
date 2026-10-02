@@ -197,7 +197,9 @@ stale_after: 2027-01-01T00:00:00+09:00   # optional: when to measure the state a
   letter (`C:/...`) or a `file:` URL fails: it names a file on one machine. Only a URL (`https:`, `mailto:`) is not
   checked, and a file name with a line number (`check.rs:104`) is a path, not a URL. A path is separated with `/`:
   only Windows reads a backslash as a separator, so a path with one fails. A path that climbs above the repository
-  fails: GitHub serves only the repository. A link to a `.py` file names, in its text, a function
+  fails: GitHub serves only the repository. Links are read as a CommonMark reader reads them: with a title
+  (`[a](b.md "title")`), in angle brackets, as reference links defined in `# Details`, as images, and as `href` in
+  HTML, and not inside code or comments. A link to a `.py` file names, in its text, a function
   or class defined there, at any depth. The file is parsed as Python, so a `def` line inside a string or a docstring
   does not count. The text is one name exactly as defined (``[`render_index`](../tests/bundle.py)``), not a call
   (`render_index()`) or a dotted path (`Bundle.render`); when it names nothing, the message says which name to write

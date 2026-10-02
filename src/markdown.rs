@@ -6,6 +6,7 @@ use std::path::Path;
 use std::sync::LazyLock;
 
 use percent_encoding::percent_decode_str;
+use pulldown_cmark::{Event, Parser, Tag, TagEnd};
 use regex::Regex;
 use ruff_python_ast::statement_visitor::{StatementVisitor, walk_stmt};
 use ruff_python_ast::{PySourceType, Stmt};
@@ -13,7 +14,9 @@ use unicode_general_category::{GeneralCategory, get_general_category};
 
 use crate::source::{Lookup, lookup, read_source};
 
-static LINK: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\[([^\]]*)\]\(([^)\s]+)\)").unwrap());
+// The target of a link in HTML, which GitHub renders as a link too: in double quotes, or in single quotes
+static HREF: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"(?i)\bhref\s*=\s*(?:"([^"]*)"|'([^']*)')"#).unwrap());
 // A URL scheme. RFC 3986 allows `.` in one, but no scheme in use has it, while a file name with a line number
 // (`check.rs:104`) always does: read as a URL, that path would never be checked
 static URL: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[A-Za-z][A-Za-z0-9+-]*:").unwrap());
@@ -189,11 +192,46 @@ pub fn anchors(text: &str) -> HashSet<String> {
     found
 }
 
-/// `(text, target)` for every inline markdown link.
+/// `(text, target)` for every link a reader of the rendered page can follow, in order: inline and reference links,
+/// images, and `href` in HTML. Read by a CommonMark parser, so a title (`[a](b.md "title")`), a target in angle
+/// brackets (`<a b.md>`), parentheses in a target (`b(1).md`) and escaped brackets in the text read as GitHub reads
+/// them. Inline code in the text keeps its backticks.
+///
+/// A reference link is read when its definition is in `text`. One defined elsewhere in the document is not seen.
 pub fn links(text: &str) -> Vec<(String, String)> {
-    LINK.captures_iter(text)
-        .map(|caps| (caps[1].to_string(), caps[2].to_string()))
-        .collect()
+    let mut out = Vec::new();
+    // Links whose text is still being read. An image may sit inside a link
+    let mut open: Vec<(String, String)> = Vec::new();
+    for event in Parser::new(text) {
+        match event {
+            Event::Start(Tag::Link { dest_url, .. } | Tag::Image { dest_url, .. }) => {
+                open.push((String::new(), dest_url.into_string()));
+            }
+            Event::End(TagEnd::Link | TagEnd::Image) => out.extend(open.pop()),
+            Event::Text(shown) => {
+                if let Some((text, _)) = open.last_mut() {
+                    text.push_str(&shown);
+                }
+            }
+            Event::Code(code) => {
+                if let Some((text, _)) = open.last_mut() {
+                    text.push_str(&format!("`{code}`"));
+                }
+            }
+            Event::SoftBreak | Event::HardBreak => {
+                if let Some((text, _)) = open.last_mut() {
+                    text.push(' ');
+                }
+            }
+            Event::Html(html) | Event::InlineHtml(html) => out.extend(
+                HREF.captures_iter(&html)
+                    .filter_map(|caps| caps.get(1).or(caps.get(2)))
+                    .map(|target| (String::new(), target.as_str().to_string())),
+            ),
+            _ => {}
+        }
+    }
+    out
 }
 
 /// Why the link does not resolve, or `None` when it does.
@@ -445,6 +483,45 @@ Text <!-- one line --> and text <!--
             .map(|(t, l)| (t.to_string(), l.to_string()))
             .collect();
         assert_eq!(links(text), expected);
+    }
+
+    #[test]
+    fn every_form_a_reader_can_follow_is_read() {
+        let text = concat!(
+            "[double](a.md \"title\") [single](b.md 'title') [paren](c.md (title))\n",
+            "[angle](<d e.md>) [nested](f(1).md) ![image](g.png)\n",
+            "[full][ref] [collapsed][] [collapsed]\n",
+            "<a href=\"h.md\">html</a> <a HREF='i.md'>single</a> <https://example.com>\n",
+            r"[Evil \](fake.md) \[hacked](j.md)",
+            "\n\n[ref]: k.md\n[collapsed]: l.md\n",
+        );
+        let targets: Vec<String> = links(text).into_iter().map(|(_, target)| target).collect();
+        assert_eq!(
+            targets,
+            [
+                "a.md",
+                "b.md",
+                "c.md",
+                "d e.md",
+                "f(1).md",
+                "g.png",
+                "k.md",
+                "l.md",
+                "l.md",
+                "h.md",
+                "i.md",
+                "https://example.com",
+                "j.md"
+            ]
+        );
+        // The escaped brackets stay in the text of the one link
+        assert_eq!(links(text).last().unwrap().0, "Evil ](fake.md) [hacked");
+    }
+
+    #[test]
+    fn what_a_reader_cannot_follow_is_not_a_link() {
+        let text = "`[code](a.md)`\n\n```\n[fenced](b.md)\n```\n\n<!-- [comment](c.md) -->\n\n\\[escaped](d.md)\n";
+        assert_eq!(links(text), Vec::<(String, String)>::new());
     }
 
     /// A bundle with a document, a log whose format guide is an HTML comment, and a Python file outside the bundle.

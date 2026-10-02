@@ -499,6 +499,40 @@ mod tests {
     }
 
     #[test]
+    fn a_link_in_any_form_is_resolved() {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir_all(root.path().join("docs/backlog")).unwrap();
+        fs::write(root.path().join("docs/log.md"), "# Log\n").unwrap();
+        fs::write(root.path().join("docs/backlog/a (1).md"), "# A\n").unwrap();
+        let good = "[log](/log.md)";
+        let resolving = [
+            "[log](/log.md \"the log\")",
+            "[log](</log.md>)",
+            "[a](<a (1).md>)",
+            "[log][ref]\n\n[ref]: /log.md",
+            "<a href=\"/log.md\">log</a>",
+        ];
+        for detail in resolving {
+            let bad = unresolved(&map(&[("x.md", detail)]), root.path());
+            assert!(bad.is_empty(), "{detail}: {bad:?}");
+        }
+        // Next to a link that resolves, a broken one in each form is still found
+        let dangling = [
+            "[gone](gone.md \"title\")",
+            "[gone](gone.md 'title')",
+            "[gone](<gone file.md>)",
+            "[gone][ref]\n\n[ref]: gone.md",
+            "[gone][]\n\n[gone]: gone.md",
+            "<a href=\"gone.md\">gone</a>",
+        ];
+        for form in dangling {
+            let detail = format!("{good} {form}");
+            let bad = unresolved(&map(&[("x.md", &detail)]), root.path());
+            assert!(bad.contains_key("x.md"), "{form} passed");
+        }
+    }
+
+    #[test]
     fn a_dangling_log_pointer_is_caught() {
         let log = "## 2026-10-01\n\n### Something\n- **Open items**: docs/backlog/rules.md, \
                    docs/backlog/no-such-item.md, backlog/rules.md, docs\\backlog\\rules.md, \

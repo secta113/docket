@@ -642,6 +642,15 @@ Not yet. Measured by hand.
             line.starts_with(r"* [Evil \](fake.md) \[hacked \\ end](x.md) - "),
             "{line}"
         );
+        // Read back as a reader reads it, the entry is one link to its own document, with the title as its text
+        let found = crate::markdown::links(line);
+        assert_eq!(
+            found,
+            [(
+                r"Evil ](fake.md) [hacked \ end".to_string(),
+                "x.md".to_string()
+            )]
+        );
     }
 
     #[test]
