@@ -80,6 +80,7 @@ definitions are built into it, and the declaration is never shipped with it.
 
 ```toml
 stack = "python"         # python | typescript | rust | none
+areas = ["billing", "records"]  # the areas the records are grouped by, in this order (see The records)
 absent = ["ui"]          # layers this project does not have
 unchecked = ["scripts"]  # paths outside the layers that docket does not look into
 ```
@@ -117,6 +118,13 @@ docs/
     index.md        generated
 ```
 
+Every backlog item and every spec belongs to exactly one area: its only tag, one of the `areas` the declaration
+lists. The index files group by area, in the order of `areas`, so the project puts the largest or most active area
+first. An area says where a record belongs (the layers, the records, billing), and never closes. A declared area that
+no record uses passes, so an area is declared before its first record. Renaming an area is editing `areas` and the tag
+of every record in it, closed ones included: the tag is frontmatter for the index, not history. Guides keep their
+optional tags, which name no area.
+
 A backlog item has this frontmatter and these body headings:
 
 ```markdown
@@ -124,7 +132,7 @@ A backlog item has this frontmatter and these body headings:
 type: Backlog Item
 title: Some problem
 description: One sentence: what the problem is.
-tags: [area]                  # exactly one; the index groups items by it
+tags: [area]                  # exactly one, declared in areas; the index groups items by it
 status: stable                # stable = open, deprecated = closed
 filed: 2026-10-01
 verified: {by: human:someone, at: 2026-10-01T10:00:00+09:00}
@@ -148,7 +156,9 @@ stale_after: 2027-01-01T00:00:00+09:00   # optional: when to measure the state a
   off by listing it. At least one layer is present: with every layer declared absent, nothing would be checked.
 
 - **The bundle is there:** `docs/`, `docs/index.md`, `docs/backlog/`, `docs/backlog/rules.md`, `docs/specs/` and
-  `docs/done/` exist. Without them every other check would pass with nothing checked.
+  `docs/done/` exist, and the declaration with its `areas` can be read. Without them every other check would pass
+  with nothing checked.
+- **The areas are distinct headings:** none is empty or has a space at either end, and no two differ only in case.
 - **Every backlog item keeps the format:** the fields above with their types, and non-empty Trigger, State and Details
   (and Resolution when closed). A field docket does not know passes as an extension, as OKF allows, unless it looks
   like a misspelling of a field the document type has (`stale_afer`, `staleAfter`, `Title`), or is a backlog item's
@@ -156,7 +166,8 @@ stale_after: 2027-01-01T00:00:00+09:00   # optional: when to measure the state a
   silently dropped. A deadline is an event or a reason, never only a date
   (`2026-10-31`, `2026/10/31`, `31.10.2026`, `2026年10月31日` or a month alone); an event may contain a date. Every
   time has a time zone. `stale_after` is later than the last `verified`. A required text is not blank (spaces alone
-  are empty), in every document type, and no tag is empty.
+  are empty), in every document type, and no tag is empty. The one tag is a declared area, and the message lists the
+  declared ones.
 - **Every link in `# Details` resolves,** with heading anchors computed as GitHub computes them. A path with a drive
   letter (`C:/...`) fails: it names a file on one machine. Only a URL (`https:`, `mailto:`) is not checked, and a
   file name with a line number (`check.rs:104`) is a path, not a URL. A path is separated with `/`: only Windows
@@ -165,8 +176,8 @@ stale_after: 2027-01-01T00:00:00+09:00   # optional: when to measure the state a
   does not count. The text is one name exactly as defined (``[`render_index`](../tests/bundle.py)``), not a call
   (`render_index()`) or a dotted path (`Bundle.render`); when it names nothing, the message says which name to write
   or lists the names the file defines.
-- **Every spec keeps the format:** `title`, `description` and `status`, a status that matches its directory, and a
-  non-empty `# Resolution` once it is closed.
+- **Every spec keeps the format:** `title`, `description`, `status` and exactly one declared area in `tags`, a status
+  that matches its directory, and a non-empty `# Resolution` once it is closed.
 - **The log exists, points only at backlog items that exist** (`backlog/<slug>.md`, written with `/` or `\`, the
   slug percent-encoded or not), and its second-level headings are dates, newest first. Below the title, the log is
   a flat list of entries grouped under the dates (OKF 0.2, section 9): every entry is a list item, and its indented

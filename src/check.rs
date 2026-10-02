@@ -4,6 +4,8 @@
 //!   sits outside them (`structure.rs`).
 //! - **The backlog works as a backlog**: every document keeps the format, every link in `# Details` resolves, and every
 //!   backlog item the log points to exists.
+//! - **Every record has one declared area**: the areas in `.config/docket.toml` are distinct headings, and the one tag
+//!   of every backlog item and spec is one of them.
 //! - **`docs/` is one OKF bundle**: every document is a known type in the directory for its type, a spec sits in the
 //!   directory for its status, every file docket generates (the index files and the backlog rules) equals what
 //!   `docket index` writes, and no spec sits at the root.
@@ -24,6 +26,7 @@ use regex::Regex;
 
 use crate::bundle::{Bundle, Docs, RESERVED, backlog, specs};
 use crate::frontmatter::split;
+use crate::layers::{DECLARATION, area_problems, areas};
 use crate::markdown::{broken, heading, links, visible};
 use crate::schema::SPEC_FOLDERS;
 use crate::source::{read_source, relative_path};
@@ -86,11 +89,26 @@ pub fn check(root: &Path) -> io::Result<Report> {
 
 /// Every broken rule of the records.
 fn records(root: &Path) -> io::Result<Vec<Finding>> {
-    let bundle = Bundle::new(root);
     let mut found = Vec::new();
     let mut add = |check: &'static str, details: Vec<String>| {
         found.extend(details.into_iter().map(|detail| Finding { check, detail }));
     };
+    // Every record names an area, so nothing below can be judged without them. The structure check names what is
+    // wrong with the declaration; this says that the records were not checked because of it
+    let areas = match areas(root)? {
+        Ok(areas) => areas,
+        Err(_) => {
+            add(
+                "the bundle is seen",
+                vec![format!(
+                    "the records are not checked: they are grouped by the areas in {DECLARATION}, which cannot be read"
+                )],
+            );
+            return Ok(found);
+        }
+    };
+    add("the areas are distinct headings", area_problems(&areas));
+    let bundle = Bundle::new(root, areas);
 
     // The floor: the directories and the root index exist, and the backlog rules are found as a document. If a move
     // or a rename makes the scan come back empty, the checks below see nothing and pass
@@ -110,7 +128,7 @@ fn records(root: &Path) -> io::Result<Vec<Finding>> {
     }
 
     let docs = bundle.read_folder("backlog")?;
-    let parsed = backlog(&docs);
+    let parsed = backlog(&docs, &bundle.areas);
     add(
         "every backlog document keeps the format",
         pairs(&parsed.problems),
@@ -152,7 +170,7 @@ fn records(root: &Path) -> io::Result<Vec<Finding>> {
         pairs(&out_of_place),
     );
     for (folder, _) in SPEC_FOLDERS {
-        let (_, bad) = specs(folder, &bundle.read_folder(folder)?);
+        let (_, bad) = specs(folder, &bundle.read_folder(folder)?, &bundle.areas);
         add(
             "every spec keeps the format",
             bad.into_iter()

@@ -44,7 +44,7 @@ pub fn create(root: &Path) -> Result<Made, String> {
         }
     }
 
-    let bundle = Bundle::new(root);
+    let bundle = Bundle::new(root, declared.declaration.areas.clone());
     for folder in ["backlog", "specs", "done"] {
         let dir = bundle.docs.join(folder);
         fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;

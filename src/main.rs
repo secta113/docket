@@ -121,7 +121,8 @@ fn check(root: &Path) -> Result<bool, String> {
 
 /// Write every index file, then list what was left out of them and the items to measure again.
 fn index(root: &Path) -> Result<(), String> {
-    let bundle = Bundle::new(root);
+    let areas = docket::layers::areas(root).map_err(|e| e.to_string())??;
+    let bundle = Bundle::new(root, areas);
     let (files, problems) = bundle.expected().map_err(|e| e.to_string())?;
     for (path, text) in files {
         fs::write(&path, text).map_err(|e| format!("{}: {e}", path.display()))?;
@@ -130,7 +131,8 @@ fn index(root: &Path) -> Result<(), String> {
     for (name, why) in problems {
         println!("left out of the index, fix it: {name}: {why}");
     }
-    let parsed = backlog(&bundle.read_folder("backlog").map_err(|e| e.to_string())?);
+    let docs = bundle.read_folder("backlog").map_err(|e| e.to_string())?;
+    let parsed = backlog(&docs, &bundle.areas);
     for name in stale(&parsed.items, Local::now().fixed_offset()) {
         let at = parsed.items[&name].0.stale_after.unwrap();
         println!("past stale_after, measure the state again: {name} ({at})");

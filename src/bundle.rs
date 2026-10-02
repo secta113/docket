@@ -9,6 +9,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use crate::frontmatter::Sections;
+use crate::layers::DECLARATION;
 use crate::schema::{
     BacklogDoc, CLOSED_SECTION, DeadlineKind, Guide, Item, SPEC_FOLDERS, Spec, Status, Time,
     backlog_doc, spec,
@@ -46,10 +47,15 @@ pub struct Backlog {
     pub problems: Problems,
 }
 
-pub fn backlog(docs: &Docs) -> Backlog {
+/// The documents of `docs/backlog/`, sorted out. An item whose area is not among `areas` is left out with why.
+pub fn backlog(docs: &Docs, areas: &[String]) -> Backlog {
     let mut out = Backlog::default();
     for (name, text) in docs {
         match backlog_doc(text) {
+            Ok(BacklogDoc::Item(item, _)) if !areas.contains(&item.tag) => {
+                out.problems
+                    .insert(name.clone(), undeclared(&item.tag, areas));
+            }
             Ok(BacklogDoc::Item(item, sections)) => {
                 out.items.insert(name.clone(), (item, sections));
             }
@@ -64,12 +70,20 @@ pub fn backlog(docs: &Docs) -> Backlog {
     out
 }
 
-/// The specs of `docs/<folder>/` that pass, and why the others do not.
-pub fn specs(folder: &str, docs: &Docs) -> (BTreeMap<String, (Spec, Sections)>, Problems) {
+/// The specs of `docs/<folder>/` that pass, and why the others do not. A spec whose area is not among `areas` does not
+/// pass.
+pub fn specs(
+    folder: &str,
+    docs: &Docs,
+    areas: &[String],
+) -> (BTreeMap<String, (Spec, Sections)>, Problems) {
     let mut passed = BTreeMap::new();
     let mut problems = Problems::new();
     for (name, text) in docs {
         match spec(folder, text) {
+            Ok((spec, _)) if !areas.contains(&spec.tag) => {
+                problems.insert(name.clone(), undeclared(&spec.tag, areas));
+            }
             Ok(parsed) => {
                 passed.insert(name.clone(), parsed);
             }
@@ -81,15 +95,28 @@ pub fn specs(folder: &str, docs: &Docs) -> (BTreeMap<String, (Spec, Sections)>, 
     (passed, problems)
 }
 
-/// The bundle of one repository: `<root>/docs`.
+/// Why a tag is not an area, with the areas it could be.
+fn undeclared(tag: &str, areas: &[String]) -> String {
+    let declared = if areas.is_empty() {
+        "it declares none".to_string()
+    } else {
+        format!("it declares {}", areas.join(", "))
+    };
+    format!("tags: {tag:?} is not an area declared in {DECLARATION} ({declared})")
+}
+
+/// The bundle of one repository: `<root>/docs`, and the areas its records are grouped by.
 pub struct Bundle {
     pub docs: PathBuf,
+    /// In the order the index files list them
+    pub areas: Vec<String>,
 }
 
 impl Bundle {
-    pub fn new(root: &Path) -> Self {
+    pub fn new(root: &Path, areas: Vec<String>) -> Self {
         Bundle {
             docs: root.join("docs"),
+            areas,
         }
     }
 
@@ -117,21 +144,21 @@ impl Bundle {
         // The rules as they are about to be written, so the backlog index lists them on the run that writes them
         let mut docs = self.read_folder("backlog")?;
         docs.insert("rules.md".into(), RULES.into());
-        let backlog = backlog(&docs);
+        let backlog = backlog(&docs, &self.areas);
         let mut files = vec![
             (self.docs.join("backlog").join("rules.md"), RULES.into()),
             (self.docs.join("index.md"), render_root()),
             (
                 self.docs.join("backlog").join("index.md"),
-                render_backlog(&backlog.items, &backlog.guides),
+                render_backlog(&backlog.items, &backlog.guides, &self.areas),
             ),
         ];
         let mut problems = backlog.problems;
         for (folder, _) in SPEC_FOLDERS {
-            let (passed, bad) = specs(folder, &self.read_folder(folder)?);
+            let (passed, bad) = specs(folder, &self.read_folder(folder)?, &self.areas);
             files.push((
                 self.docs.join(folder).join("index.md"),
-                render_specs(folder, &passed),
+                render_specs(&passed, &self.areas),
             ));
             problems.extend(
                 bad.into_iter()
@@ -171,8 +198,8 @@ pub fn first_sentence(text: &str) -> &str {
     first
 }
 
-/// The backlog index (an OKF index.md): the guides, the open items by area, and the closed items last so they do not
-/// bury the open ones.
+/// The backlog index (an OKF index.md): the guides, the open items by area in the order `areas` declares them, and the
+/// closed items last so they do not bury the open ones.
 ///
 /// Each entry has the OKF form `* [title](target) - description`, with the frontmatter's `description`. An open item
 /// adds, after ` | `, the date of the last measurement, the first sentence of its state and its deadline: what a
@@ -180,6 +207,7 @@ pub fn first_sentence(text: &str) -> &str {
 pub fn render_backlog(
     items: &BTreeMap<String, (Item, Sections)>,
     guides: &BTreeMap<String, Guide>,
+    areas: &[String],
 ) -> String {
     let mut out = vec![GENERATED.to_string()];
     if !guides.is_empty() {
@@ -194,21 +222,18 @@ pub fn render_backlog(
         .iter()
         .filter(|(_, (item, _))| item.status == Status::Stable)
         .collect();
-    let mut tags: Vec<&str> = open
-        .iter()
-        .map(|(_, (item, _))| item.tag.as_str())
-        .collect();
-    tags.sort();
-    tags.dedup();
-    for tag in tags {
-        out.extend(["".into(), format!("# {tag}"), "".into()]);
-        let mut in_tag: Vec<_> = open
+    for area in areas {
+        let mut in_area: Vec<_> = open
             .iter()
-            .filter(|(_, (item, _))| item.tag == tag)
+            .filter(|(_, (item, _))| &item.tag == area)
             .collect();
-        in_tag.sort_by_key(|(name, (item, _))| (item.filed, *name));
+        if in_area.is_empty() {
+            continue;
+        }
+        in_area.sort_by_key(|(name, (item, _))| (item.filed, *name));
+        out.extend(["".into(), format!("# {area}"), "".into()]);
         out.extend(
-            in_tag
+            in_area
                 .into_iter()
                 .map(|(name, (item, sections))| open_line(name, item, sections)),
         );
@@ -252,24 +277,30 @@ fn open_line(name: &str, item: &Item, sections: &Sections) -> String {
     )
 }
 
-/// The index of `specs/` or `done/`. A spec in progress shows its status; a closed one its resolution.
-pub fn render_specs(folder: &str, specs: &BTreeMap<String, (Spec, Sections)>) -> String {
-    let heading = if folder == "specs" {
-        "# Specs"
-    } else {
-        "# Closed specs"
-    };
-    let mut out = vec![GENERATED.to_string(), "".into(), heading.into(), "".into()];
-    for (name, (spec, sections)) in specs {
-        let after = if spec.status == Status::Deprecated {
-            format!("Resolution: {}", first_sentence(&sections[CLOSED_SECTION]))
-        } else {
-            format!("Status: {}.", spec.status.name())
-        };
-        out.push(format!(
-            "* [{}]({name}) - {} | {after}",
-            spec.title, spec.description
-        ));
+/// The index of `specs/` or `done/`: the specs by area, in the order `areas` declares them. A spec in progress shows
+/// its status; a closed one its resolution.
+pub fn render_specs(specs: &BTreeMap<String, (Spec, Sections)>, areas: &[String]) -> String {
+    let mut out = vec![GENERATED.to_string()];
+    for area in areas {
+        let in_area: Vec<_> = specs
+            .iter()
+            .filter(|(_, (spec, _))| &spec.tag == area)
+            .collect();
+        if in_area.is_empty() {
+            continue;
+        }
+        out.extend(["".into(), format!("# {area}"), "".into()]);
+        for (name, (spec, sections)) in in_area {
+            let after = if spec.status == Status::Deprecated {
+                format!("Resolution: {}", first_sentence(&sections[CLOSED_SECTION]))
+            } else {
+                format!("Status: {}.", spec.status.name())
+            };
+            out.push(format!(
+                "* [{}]({name}) - {} | {after}",
+                spec.title, spec.description
+            ));
+        }
     }
     out.join("\n") + "\n"
 }
@@ -343,7 +374,7 @@ Not yet. Measured by hand.
             .iter()
             .map(|(name, text)| (name.to_string(), text.clone()))
             .collect();
-        let parsed = backlog(&docs);
+        let parsed = backlog(&docs, &areas());
         assert!(parsed.problems.is_empty(), "{:?}", parsed.problems);
         parsed
     }
@@ -372,7 +403,11 @@ Not yet. Measured by hand.
     #[test]
     fn an_open_item_shows_its_state_and_deadline() {
         // Measured at 08:00 in +09:00, which is the day before in UTC: the date is the one where it was measured
-        let index = render_backlog(&parsed(&[("good.md", GOOD.into())]).items, &BTreeMap::new());
+        let index = render_backlog(
+            &parsed(&[("good.md", GOOD.into())]).items,
+            &BTreeMap::new(),
+            &areas(),
+        );
         let line = "* [Some problem](good.md) - Something is wrong. | State (2026-09-28): Not yet. | Deadline: until \
                     the next deploy";
         assert_eq!(index, format!("{GENERATED}\n\n# operations\n\n{line}\n"));
@@ -388,7 +423,7 @@ Not yet. Measured by hand.
         );
         let parsed = parsed(&[("fresh.md", fresh), ("plain.md", GOOD.into())]);
         assert!(
-            render_backlog(&parsed.items, &BTreeMap::new())
+            render_backlog(&parsed.items, &BTreeMap::new(), &areas())
                 .contains("| Re-measure after 2027-03-31.")
         );
         let cutoff = FixedOffset::east_opt(9 * 3600)
@@ -406,7 +441,11 @@ Not yet. Measured by hand.
     fn a_closed_item_leaves_the_open_list() {
         let closed =
             GOOD.replace("status: stable", "status: deprecated") + "\n# Resolution\n\nFixed.\n";
-        let index = render_backlog(&parsed(&[("closed.md", closed)]).items, &BTreeMap::new());
+        let index = render_backlog(
+            &parsed(&[("closed.md", closed)]).items,
+            &BTreeMap::new(),
+            &areas(),
+        );
         assert!(
             index.contains("# Closed") && index.contains("Fixed."),
             "{index}"
@@ -417,25 +456,91 @@ Not yet. Measured by hand.
         );
     }
 
+    /// The areas the tests declare: not in alphabetical order, so an index sorted by name would differ
+    fn areas() -> Vec<String> {
+        ["operations", "billing", "unused"].map(String::from).into()
+    }
+
+    /// The headings and the targets of an index, in order.
+    fn outline(index: &str) -> Vec<&str> {
+        index
+            .lines()
+            .filter(|line| line.trim_start().starts_with(['#', '*']))
+            .map(|line| line.split(')').next().unwrap())
+            .collect()
+    }
+
     #[test]
-    fn items_are_grouped_by_area_and_ordered_by_filing_date() {
+    fn items_are_grouped_by_area_in_the_declared_order_and_by_filing_date() {
         let later = GOOD.replace("filed: 2026-09-27", "filed: 2026-09-28");
         let other = GOOD.replace("tags: [operations]", "tags: [billing]");
         let parsed = parsed(&[("a.md", later), ("b.md", GOOD.into()), ("c.md", other)]);
-        let index = render_backlog(&parsed.items, &BTreeMap::new());
-        let order: Vec<&str> = index
-            .lines()
-            .filter(|line| line.starts_with('#') || line.starts_with('*'))
-            .map(|line| line.split(')').next().unwrap())
-            .collect();
+        let index = render_backlog(&parsed.items, &BTreeMap::new(), &areas());
+        // A declared area that no record uses has no heading
         assert_eq!(
-            order,
+            outline(&index),
             [
-                "# billing",
-                "* [Some problem](c.md",
                 "# operations",
                 "* [Some problem](b.md",
-                "* [Some problem](a.md"
+                "* [Some problem](a.md",
+                "# billing",
+                "* [Some problem](c.md",
+            ]
+        );
+    }
+
+    #[test]
+    fn a_record_in_an_undeclared_area_is_left_out() {
+        let docs: Docs = [(
+            "x.md".to_string(),
+            GOOD.replace("tags: [operations]", "tags: [Operations]"),
+        )]
+        .into();
+        let parsed = backlog(&docs, &areas());
+        assert!(parsed.items.is_empty());
+        assert!(
+            parsed.problems["x.md"].contains("\"Operations\" is not an area declared")
+                && parsed.problems["x.md"].contains("operations, billing, unused"),
+            "{:?}",
+            parsed.problems
+        );
+        let spec =
+            "---\ntype: Spec\ntitle: S\ndescription: D.\ntags: [nowhere]\nstatus: stable\n---\n";
+        let (passed, problems) = specs(
+            "specs",
+            &[("s.md".to_string(), spec.to_string())].into(),
+            &[],
+        );
+        assert!(passed.is_empty());
+        assert!(
+            problems["s.md"].contains("it declares none"),
+            "{problems:?}"
+        );
+    }
+
+    #[test]
+    fn specs_are_grouped_by_area_in_the_declared_order() {
+        let spec = |tag: &str| {
+            format!(
+                "---\ntype: Spec\ntitle: S\ndescription: D.\ntags: [{tag}]\nstatus: draft\n---\n"
+            )
+        };
+        let docs: Docs = [
+            ("a.md".to_string(), spec("billing")),
+            ("b.md".to_string(), spec("operations")),
+            ("c.md".to_string(), spec("billing")),
+        ]
+        .into();
+        let (passed, problems) = specs("specs", &docs, &areas());
+        assert!(problems.is_empty(), "{problems:?}");
+        assert_eq!(
+            outline(&render_specs(&passed, &areas())),
+            [
+                "# operations",
+                "* [S](b.md",
+                "# billing",
+                "* [S](a.md",
+                "* [S](c.md"
             ]
         );
     }

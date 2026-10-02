@@ -15,9 +15,9 @@ fn stdout(out: &Output) -> String {
     String::from_utf8_lossy(&out.stdout).into_owned()
 }
 
-/// A repository with an empty bundle: the directories of `docs/`, nothing in them.
+/// A repository of records only with an empty bundle: the directories of `docs/`, nothing in them.
 fn repo() -> tempfile::TempDir {
-    let root = tempfile::tempdir().unwrap();
+    let root = declared("stack = \"none\"\nareas = [\"operations\"]\n");
     let docs = root.path().join("docs");
     for folder in ["backlog", "specs", "done"] {
         fs::create_dir_all(docs.join(folder)).unwrap();
@@ -46,7 +46,7 @@ fn a_missing_root_fails() {
 
 /// A repository that keeps every rule: what `docket create` makes for a Python project without `ui`, and a log entry.
 fn clean_repo() -> tempfile::TempDir {
-    let root = declared("stack = \"python\"\nabsent = [\"ui\"]\n");
+    let root = declared("stack = \"python\"\nareas = [\"a\"]\nabsent = [\"ui\"]\n");
     let out = run(&["--root", &root_arg(root.path()), "create"]);
     assert!(out.status.success(), "{}", stdout(&out));
     fs::write(
@@ -75,7 +75,7 @@ fn each_broken_rule_fails_under_its_check() {
         )
     };
     // Each case breaks one rule of a clean repository: (the check that must name it, what to write)
-    let cases: [(&str, &str, String); 13] = [
+    let cases: [(&str, &str, String); 18] = [
         ("the bundle is seen", "docs/backlog/rules.md", String::new()),
         (
             "every backlog document keeps the format",
@@ -135,6 +135,33 @@ fn each_broken_rule_fails_under_its_check() {
             "# spec\n".into(),
         ),
         ("the log keeps its structure", "docs/log.md", String::new()),
+        // The area of a record is declared, and the declared areas are distinct headings
+        (
+            "every backlog document keeps the format",
+            "docs/backlog/x.md",
+            item("[log](/log.md)").replace("tags: [a]", "tags: [b]"),
+        ),
+        (
+            "every spec keeps the format",
+            "docs/specs/x.md",
+            "---\ntype: Spec\ntitle: A\ndescription: B.\ntags: [b]\nstatus: stable\n---\n".into(),
+        ),
+        (
+            "every spec keeps the format",
+            "docs/specs/x.md",
+            "---\ntype: Spec\ntitle: A\ndescription: B.\nstatus: stable\n---\n".into(),
+        ),
+        (
+            "the areas are distinct headings",
+            ".config/docket.toml",
+            "stack = \"python\"\nareas = [\"a\", \"A\"]\nabsent = [\"ui\"]\n".into(),
+        ),
+        // Without the areas, no record can be judged: the check says so instead of passing them
+        (
+            "the bundle is seen",
+            ".config/docket.toml",
+            "stack = \"python\"\nabsent = [\"ui\"]\n".into(),
+        ),
     ];
     for (check, path, text) in cases {
         let root = clean_repo();
@@ -241,6 +268,16 @@ Z.
 }
 
 #[test]
+fn index_fails_without_the_areas() {
+    let root = repo();
+    fs::remove_file(root.path().join(".config/docket.toml")).unwrap();
+    let out = run(&["--root", &root_arg(root.path()), "index"]);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("docket init --stack"));
+    assert!(!root.path().join("docs/index.md").exists());
+}
+
+#[test]
 fn index_fails_without_a_spec_directory() {
     let root = repo();
     fs::remove_dir(root.path().join("docs/done")).unwrap();
@@ -301,7 +338,7 @@ fn create_makes_each_stack_once_and_check_passes_on_it() {
         ),
     ];
     for (stack, made, not_made) in stacks {
-        let root = declared(&format!("stack = \"{stack}\"\n"));
+        let root = declared(&format!("stack = \"{stack}\"\nareas = [\"a\"]\n"));
         let arg = root_arg(root.path());
         let first = run(&["--root", &arg, "create"]);
         assert!(first.status.success(), "{stack}: {}", stdout(&first));
@@ -342,7 +379,9 @@ fn create_makes_each_stack_once_and_check_passes_on_it() {
 
 #[test]
 fn create_respects_absent_and_leaves_what_it_does_not_own() {
-    let root = declared("stack = \"python\"\nabsent = [\"ui.templates\", \"infrastructure\"]\n");
+    let root = declared(
+        "stack = \"python\"\nareas = [\"a\"]\nabsent = [\"ui.templates\", \"infrastructure\"]\n",
+    );
     let arg = root_arg(root.path());
     // Files of the project: a layer it already has, and a log with entries
     fs::create_dir_all(root.path().join("domain")).unwrap();
@@ -373,12 +412,20 @@ fn create_respects_absent_and_leaves_what_it_does_not_own() {
 fn create_fails_without_a_declaration_it_can_read() {
     let cases = [
         (None, "docket init --stack"),
-        (Some("stack = \"cobol\"\n"), "unknown stack"),
         (
-            Some("stack = \"rust\"\nabsent = [\"ui\"]\n"),
+            Some("stack = \"cobol\"\nareas = [\"a\"]\n"),
+            "unknown stack",
+        ),
+        (
+            Some("stack = \"rust\"\nareas = [\"a\"]\nabsent = [\"ui\"]\n"),
             "does not have",
         ),
-        (Some("stack = \"python\"\nabsnet = []\n"), "unknown field"),
+        (
+            Some("stack = \"python\"\nareas = [\"a\"]\nabsnet = []\n"),
+            "unknown field",
+        ),
+        // A declaration written before areas existed names the field it lacks
+        (Some("stack = \"python\"\n"), "missing field `areas`"),
     ];
     for (declaration, said) in cases {
         let root = match declaration {
@@ -434,15 +481,25 @@ fn each_difference_from_the_declaration_fails() {
         ),
         (
             "unknown stack",
-            Box::new(|r| declare(r, "stack = \"cobol\"\n")),
+            Box::new(|r| declare(r, "stack = \"cobol\"\nareas = [\"a\"]\n")),
         ),
         (
             "does not have",
-            Box::new(|r| declare(r, "stack = \"python\"\nabsent = [\"ui\", \"service\"]\n")),
+            Box::new(|r| {
+                declare(
+                    r,
+                    "stack = \"python\"\nareas = [\"a\"]\nabsent = [\"ui\", \"service\"]\n",
+                )
+            }),
         ),
         (
             "unknown field",
-            Box::new(|r| declare(r, "stack = \"python\"\nabsent = [\"ui\"]\nextra = 1\n")),
+            Box::new(|r| {
+                declare(
+                    r,
+                    "stack = \"python\"\nareas = [\"a\"]\nabsent = [\"ui\"]\nextra = 1\n",
+                )
+            }),
         ),
         // A layer cannot be switched off by listing it, or a directory holding it
         (
@@ -450,7 +507,7 @@ fn each_difference_from_the_declaration_fails() {
             Box::new(|r| {
                 declare(
                     r,
-                    "stack = \"python\"\nabsent = [\"ui\"]\nunchecked = [\"domain\"]\n",
+                    "stack = \"python\"\nareas = [\"a\"]\nabsent = [\"ui\"]\nunchecked = [\"domain\"]\n",
                 )
             }),
         ),
@@ -461,7 +518,7 @@ fn each_difference_from_the_declaration_fails() {
                 plant_file(r, "scripts/tool.py");
                 declare(
                     r,
-                    "stack = \"python\"\nabsent = [\"ui\"]\nunchecked = [\"./scripts\"]\n",
+                    "stack = \"python\"\nareas = [\"a\"]\nabsent = [\"ui\"]\nunchecked = [\"./scripts\"]\n",
                 );
             }),
         ),
@@ -470,7 +527,7 @@ fn each_difference_from_the_declaration_fails() {
             Box::new(|r| {
                 declare(
                     r,
-                    "stack = \"python\"\nabsent = [\"ui\"]\nunchecked = [\"scripts\"]\n",
+                    "stack = \"python\"\nareas = [\"a\"]\nabsent = [\"ui\"]\nunchecked = [\"scripts\"]\n",
                 )
             }),
         ),
@@ -489,7 +546,7 @@ fn each_difference_from_the_declaration_fails() {
                 }
                 declare(
                     r,
-                    "stack = \"python\"\nabsent = [\"handler\", \"ui\", \"application\", \"infrastructure\", \
+                    "stack = \"python\"\nareas = [\"a\"]\nabsent = [\"handler\", \"ui\", \"application\", \"infrastructure\", \
                      \"domain\", \"utils\"]\n",
                 );
             }),
@@ -528,7 +585,7 @@ fn code_that_is_not_the_projects_is_not_looked_at() {
     }
     declare(
         r,
-        "stack = \"python\"\nabsent = [\"ui\"]\nunchecked = [\"scripts/\"]\n",
+        "stack = \"python\"\nareas = [\"a\"]\nabsent = [\"ui\"]\nunchecked = [\"scripts/\"]\n",
     );
     let out = run(&["--root", &root_arg(r), "check"]);
     assert!(out.status.success(), "{}", stdout(&out));
@@ -541,7 +598,10 @@ fn only_the_projects_own_gitignore_hides_code() {
     fs::write(outer.path().join(".gitignore"), "scripts/\n").unwrap();
     let r = outer.path().join("project");
     fs::create_dir_all(r.join(".config")).unwrap();
-    declare(&r, "stack = \"typescript\"\nabsent = [\"ui\"]\n");
+    declare(
+        &r,
+        "stack = \"typescript\"\nareas = [\"a\"]\nabsent = [\"ui\"]\n",
+    );
     assert!(run(&["--root", &root_arg(&r), "create"]).status.success());
     plant_file(&r, "src/scripts/tool.ts");
     let out = run(&["--root", &root_arg(&r), "check"]);
@@ -613,7 +673,7 @@ fn init_needs_a_known_stack() {
 
 #[test]
 fn a_repository_of_records_only_makes_and_checks_only_docs() {
-    let root = declared("stack = \"none\"\n");
+    let root = declared("stack = \"none\"\nareas = [\"a\"]\n");
     let arg = root_arg(root.path());
     let out = run(&["--root", &arg, "create"]);
     assert!(out.status.success(), "{}", stdout(&out));
@@ -649,7 +709,10 @@ fn a_repository_of_records_only_makes_and_checks_only_docs() {
     let out = run(&["--root", &arg, "check"]);
     assert_eq!(out.status.code(), Some(1), "{}", stdout(&out));
     // No layers means nothing to declare absent or unchecked
-    declare(root.path(), "stack = \"none\"\nabsent = [\"ui\"]\n");
+    declare(
+        root.path(),
+        "stack = \"none\"\nareas = [\"a\"]\nabsent = [\"ui\"]\n",
+    );
     let out = run(&["--root", &arg, "check"]);
     assert_eq!(out.status.code(), Some(1));
     assert!(

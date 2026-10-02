@@ -240,10 +240,46 @@ fn render(files: &[File], at: &str, name: &str, prefix: &str, doc: &str) -> Vec<
 #[serde(deny_unknown_fields)]
 pub struct Declaration {
     pub stack: String,
+    /// The areas the records are grouped by, in this order. Required, so a declaration written before areas existed
+    /// fails with the field it lacks rather than with every record's tag
+    pub areas: Vec<String>,
     #[serde(default)]
     pub absent: Vec<String>,
     #[serde(default)]
     pub unchecked: Vec<String>,
+}
+
+/// The areas a project declares, or why the declaration cannot be read.
+pub fn areas(root: &Path) -> io::Result<Result<Vec<String>, String>> {
+    Ok(match declaration(root)? {
+        None => Err(MISSING.into()),
+        Some(Err(why)) => Err(format!("{DECLARATION}: {why}")),
+        Some(Ok(declaration)) => Ok(declaration.areas),
+    })
+}
+
+/// What is wrong with a list of areas. An area becomes a heading, so it has text, no space at either end, and no other
+/// area differs from it only in case.
+pub fn area_problems(areas: &[String]) -> Vec<String> {
+    let mut found = Vec::new();
+    for (i, area) in areas.iter().enumerate() {
+        if area.trim().is_empty() {
+            found.push(format!("{DECLARATION}: areas has an empty area"));
+        } else if area.trim() != area {
+            found.push(format!(
+                "{DECLARATION}: areas has {area:?}, with a space at one end"
+            ));
+        }
+        if let Some(earlier) = areas[..i]
+            .iter()
+            .find(|earlier| earlier.to_lowercase() == area.to_lowercase())
+        {
+            found.push(format!(
+                "{DECLARATION}: areas has {earlier:?} and {area:?}, two names for one heading"
+            ));
+        }
+    }
+    found
 }
 
 /// The declaration, or why it cannot be read. `Ok(None)` when the file does not exist.
@@ -274,14 +310,17 @@ pub fn declaration_text(stack: &str) -> String {
     let head = "# What docket keeps in this project. Edit it, then run `docket create` to make what is missing.\n\
                 # `docket check` fails when the tree and this file differ, either way.\n";
     let stacks = known_stacks().join(" | ");
+    let areas = "# The areas the records are grouped by, in this order, such as \"billing\" or \"records\". Every backlog\n\
+                 # item and spec has exactly one of them in tags, and the index files group by them\n\
+                 areas = []\n";
     if stack == RECORDS_ONLY {
         return format!(
             "{head}\n# {stacks}. \"none\": records only (docs/), no layers to make or check\n\
-             stack = \"{stack}\"\n"
+             stack = \"{stack}\"\n\n{areas}"
         );
     }
     format!(
-        "{head}\n# {stacks}\nstack = \"{stack}\"\n\n\
+        "{head}\n# {stacks}\nstack = \"{stack}\"\n\n{areas}\n\
          # Layers this project does not have, such as \"ui\" or \"ui.templates\". Delete the directory too\n\
          absent = []\n\n\
          # Paths outside the layers that docket does not look into, such as \"scripts\" (helper scripts, generated or\n\
@@ -461,6 +500,26 @@ mod tests {
                 toml::from_str(&declaration_text(stack)).unwrap_or_else(|e| panic!("{stack}: {e}"));
             assert_eq!(declaration.stack, stack);
             assert!(Declared::new(declaration).is_ok(), "{stack}");
+        }
+    }
+
+    #[test]
+    fn areas_are_distinct_headings() {
+        let good: Vec<String> = ["docket", "記録", "Records of billing"]
+            .map(String::from)
+            .into();
+        assert_eq!(area_problems(&good), Vec::<String>::new());
+        let bad = [
+            vec![""],
+            vec!["  "],
+            vec![" docket"],
+            vec!["docket "],
+            vec!["docket", "Docket"],
+            vec!["docket", "docket"],
+        ];
+        for areas in bad {
+            let areas: Vec<String> = areas.into_iter().map(String::from).collect();
+            assert_eq!(area_problems(&areas).len(), 1, "{areas:?}");
         }
     }
 

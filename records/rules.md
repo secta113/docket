@@ -21,7 +21,7 @@ and other documents refer to it. The frontmatter holds the fields used for filte
 | `type` | `Backlog Item` |
 | `title` | Display name |
 | `description` | One sentence: what the problem is |
-| `tags` | Exactly one area. The index groups items by it |
+| `tags` | Exactly one area, one of the `areas` declared in `.config/docket.toml`. The index groups items by it, in that order |
 | `status` | `stable` (open) or `deprecated` (closed) |
 | `filed` | Date the item was filed |
 | `verified` | Who measured the state and when: `{by, at}`, or a list of them. `at` is a datetime with a time zone. `by` is `human:<id>` for a person, `<producer>/<version>` for an agent (example: `claude-code/claude-opus-5-5`), or `process:<id>` |

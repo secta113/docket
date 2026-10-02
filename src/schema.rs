@@ -145,6 +145,8 @@ pub struct Guide {
 pub struct Spec {
     pub title: String,
     pub description: String,
+    /// The area. The index files group specs by it
+    pub tag: String,
     pub status: Status,
 }
 
@@ -219,13 +221,14 @@ fn spec_fields(fields: &mut Fields) -> Option<Spec> {
         "status",
         status(&[Status::Draft, Status::Stable, Status::Deprecated]),
     );
-    fields.optional("tags", text_list);
+    let tag = fields.required("tags", one_tag);
     fields.optional("verified", stamps);
     fields.optional("stale_after", time);
     okf_optional(fields);
     Some(Spec {
         title: title?,
         description: description?,
+        tag: tag?,
         status: status?,
     })
 }
@@ -608,12 +611,15 @@ fn text_list(value: &Yaml) -> Result<Vec<String>, String> {
     }
 }
 
-/// Exactly one tag: the area the index groups the item by.
+/// Exactly one tag: the area the index groups a backlog item or a spec by. Whether it is declared is checked against
+/// the declaration, which the document alone does not know (`bundle.rs`).
 fn one_tag(value: &Yaml) -> Result<String, String> {
     let mut tags = text_list(value)?;
     match tags.len() {
         1 => Ok(tags.remove(0)),
-        n => Err(format!("{n} tags; an item has exactly one area")),
+        n => Err(format!(
+            "{n} tags; a backlog item or a spec has exactly one area"
+        )),
     }
 }
 
@@ -1080,6 +1086,7 @@ Not yet.
 type: Spec
 title: Something
 description: One sentence.
+tags: [operations]
 status: stable
 ---
 
@@ -1126,7 +1133,14 @@ Something.
             (
                 "specs",
                 "an empty tag",
-                SPEC.replace("status: stable", "status: stable\ntags: [\"\"]"),
+                SPEC.replace("tags: [operations]", "tags: [\"\"]"),
+            ),
+            // A spec has exactly one area, as a backlog item does
+            ("specs", "no tag", SPEC.replace("tags: [operations]\n", "")),
+            (
+                "specs",
+                "two tags",
+                SPEC.replace("tags: [operations]", "tags: [operations, billing]"),
             ),
             (
                 "specs",
