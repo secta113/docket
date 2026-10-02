@@ -1,7 +1,8 @@
 //! The frontmatter of each record type: backlog items, guides and specs.
 //!
-//! OKF tells **readers** not to reject unknown fields. This is the **writer's** check, so unknown fields fail: a
-//! misspelled field would otherwise be silently dropped. Every field OKF defines for a concept (sections 4 and 5)
+//! OKF lets a producer add any key, and tells readers not to reject one they do not know. So an unknown field passes
+//! as an extension, unless it looks like a misspelling of a field the type reads (OKF's or docket's): that one fails,
+//! as a misspelled optional field would otherwise be silently dropped. Every field OKF defines for a concept (sections 4 and 5)
 //! passes as OKF writes it, so a document another OKF tool wrote correctly does not fail. The fields of an Attested
 //! Computation (section 10) do not, as no such document belongs in the records.
 
@@ -21,6 +22,26 @@ pub type Time = DateTime<FixedOffset>;
 /// Body headings every backlog item needs. A closed item also needs `CLOSED_SECTION`
 pub const SECTIONS: [&str; 3] = ["Trigger", "State", "Details"];
 pub const CLOSED_SECTION: &str = "Resolution";
+/// The fields only a backlog item reads (`filed`, `deadline_kind`, `deadline`), found from the readers, so a field
+/// added to the item is in it with no list to update. On another type, one is not an extension: it is a sign of the
+/// wrong `type`, under which the item's trigger and deadline would go unchecked
+static ITEM_ONLY: LazyLock<Vec<&'static str>> = LazyLock::new(|| {
+    let others = [
+        keys_read(|fields| {
+            guide(fields);
+        }),
+        keys_read(|fields| {
+            spec_fields(fields);
+        }),
+    ]
+    .concat();
+    keys_read(|fields| {
+        item(fields);
+    })
+    .into_iter()
+    .filter(|key| !others.contains(key))
+    .collect()
+});
 
 /// Directory -> the statuses a spec in it may have. The directory answers only "current or finished"
 pub const SPEC_FOLDERS: [(&str, &[Status]); 2] = [
@@ -161,24 +182,8 @@ pub fn backlog_doc(text: &str) -> Result<BacklogDoc, String> {
 pub fn spec(folder: &str, text: &str) -> Result<(Spec, Sections), String> {
     let (meta, sections) = split(text)?;
     let mut fields = Fields::new(&meta);
-    fields.required("type", one_of(&["Spec"]));
-    let title = fields.required("title", non_empty_text);
-    let description = fields.required("description", non_empty_text);
-    let status = fields.required(
-        "status",
-        status(&[Status::Draft, Status::Stable, Status::Deprecated]),
-    );
-    fields.optional("tags", text_list);
-    fields.optional("verified", stamps);
-    fields.optional("stale_after", time);
-    okf_optional(&mut fields);
-    let spec = fields.finish(title.zip(description).zip(status).map(
-        |((title, description), status)| Spec {
-            title,
-            description,
-            status,
-        },
-    ))?;
+    let spec = spec_fields(&mut fields);
+    let spec = fields.finish(spec)?;
     let allowed = SPEC_FOLDERS
         .iter()
         .find(|(name, _)| *name == folder)
@@ -201,6 +206,28 @@ pub fn spec(folder: &str, text: &str) -> Result<(Spec, Sections), String> {
         ));
     }
     Ok((spec, sections))
+}
+
+// Each reader below reads every field before it can return, so running it on an empty mapping lists its fields
+// (`keys_read`)
+
+fn spec_fields(fields: &mut Fields) -> Option<Spec> {
+    fields.required("type", one_of(&["Spec"]));
+    let title = fields.required("title", non_empty_text);
+    let description = fields.required("description", non_empty_text);
+    let status = fields.required(
+        "status",
+        status(&[Status::Draft, Status::Stable, Status::Deprecated]),
+    );
+    fields.optional("tags", text_list);
+    fields.optional("verified", stamps);
+    fields.optional("stale_after", time);
+    okf_optional(fields);
+    Some(Spec {
+        title: title?,
+        description: description?,
+        status: status?,
+    })
 }
 
 fn item(fields: &mut Fields) -> Option<Item> {
@@ -277,8 +304,16 @@ fn okf_optional(fields: &mut Fields) {
     fields.optional("resource", text);
 }
 
+/// The fields a reader reads, found by running it on an empty mapping.
+fn keys_read(reader: impl Fn(&mut Fields<'_>)) -> Vec<&'static str> {
+    let empty = Hash::new();
+    let mut fields = Fields::new(&empty);
+    reader(&mut fields);
+    fields.read
+}
+
 /// Reads the fields of one mapping, and remembers what was wrong and which keys were read. A key that no schema reads
-/// is an unknown field.
+/// is an unknown field: an extension, or a misspelling when it is close to a key that was read.
 struct Fields<'a> {
     map: &'a Hash,
     read: Vec<&'static str>,
@@ -346,13 +381,24 @@ impl<'a> Fields<'a> {
         }
     }
 
-    /// The value when every field passed and no key was unknown, or every error.
+    /// The value when every field passed and no key looks misspelled, or every error.
     fn finish<T>(mut self, value: Option<T>) -> Result<T, String> {
         for key in self.map.keys() {
             match key {
                 Yaml::String(name) if self.read.contains(&name.as_str()) => {}
-                Yaml::String(name) => self.errors.push(format!("unknown field: {name}")),
-                other => self.errors.push(format!("unknown field: {other:?}")),
+                Yaml::String(name) => {
+                    if let Some(meant) = self.read.iter().find(|known| misspelled(name, known)) {
+                        self.errors
+                            .push(format!("unknown field: {name}; did you mean {meant}?"));
+                    } else if let Some(theirs) =
+                        ITEM_ONLY.iter().find(|field| misspelled(name, field))
+                    {
+                        self.errors.push(format!(
+                            "unknown field: {name}; {theirs} is a field of a backlog item, not of this type"
+                        ));
+                    }
+                }
+                other => self.errors.push(format!("not a field name: {other:?}")),
             }
         }
         match value {
@@ -448,6 +494,48 @@ fn actor(value: &Yaml) -> Result<String, String> {
             "not an actor (human:<id>, process:<id> or <producer>/<version>): {s}"
         ))
     }
+}
+
+/// Whether `key` looks like a misspelling of `known`: the same once case, `_` and `-` are ignored, or a few edits
+/// away (one for a name of up to 6 letters, two for a longer one; none for up to 3, where one edit makes another word).
+fn misspelled(key: &str, known: &str) -> bool {
+    let plain = |s: &str| -> Vec<char> {
+        s.chars()
+            .filter(|c| *c != '_' && *c != '-')
+            .flat_map(char::to_lowercase)
+            .collect()
+    };
+    let (key, known) = (plain(key), plain(known));
+    let allowed = match known.len() {
+        0..=3 => 0,
+        4..=6 => 1,
+        _ => 2,
+    };
+    edits(&key, &known) <= allowed
+}
+
+/// The number of insertions, deletions, substitutions and swaps of two neighbours that turn `a` into `b` (optimal
+/// string alignment).
+fn edits(a: &[char], b: &[char]) -> usize {
+    let mut d = vec![vec![0; b.len() + 1]; a.len() + 1];
+    for (i, row) in d.iter_mut().enumerate() {
+        row[0] = i;
+    }
+    for (j, cell) in d[0].iter_mut().enumerate() {
+        *cell = j;
+    }
+    for i in 1..=a.len() {
+        for j in 1..=b.len() {
+            let cost = usize::from(a[i - 1] != b[j - 1]);
+            d[i][j] = (d[i - 1][j] + 1)
+                .min(d[i][j - 1] + 1)
+                .min(d[i - 1][j - 1] + cost);
+            if i > 1 && j > 1 && a[i - 1] == b[j - 2] && a[i - 2] == b[j - 1] {
+                d[i][j] = d[i][j].min(d[i - 2][j - 2] + 1);
+            }
+        }
+    }
+    d[a.len()][b.len()]
 }
 
 /// How the content was produced: `by` is required, and `at` is optional (OKF 0.2, section 5.2).
@@ -589,6 +677,62 @@ Not yet.
     }
 
     #[test]
+    fn the_item_s_own_fields_are_found_from_the_readers() {
+        assert_eq!(*ITEM_ONLY, ["filed", "deadline_kind", "deadline"]);
+        // Every field the item reads is found, optional ones included
+        let item_keys = keys_read(|fields| {
+            item(fields);
+        });
+        for key in [
+            "stale_after",
+            "generated",
+            "sources",
+            "usage_window",
+            "resource",
+        ] {
+            assert!(item_keys.contains(&key), "{key} not found: {item_keys:?}");
+        }
+    }
+
+    #[test]
+    fn an_item_s_field_fails_on_every_other_type() {
+        let guide = "---\ntype: Guide\ntitle: Rules\ndescription: What goes here.\n---\n\n# What goes here\n";
+        assert!(ITEM_ONLY.len() >= 3, "{:?}", *ITEM_ONLY);
+        for field in ITEM_ONLY.iter() {
+            let on_guide = guide.replace("type: Guide", &format!("type: Guide\n{field}: x"));
+            assert!(backlog_doc(&on_guide).is_err(), "{field} passed on a guide");
+            let on_spec = SPEC.replace("status: stable", &format!("status: stable\n{field}: x"));
+            assert!(spec("specs", &on_spec).is_err(), "{field} passed on a spec");
+        }
+    }
+
+    #[test]
+    fn misspelled_reads_close_names_only() {
+        let close = [
+            ("stale_afer", "stale_after"),
+            ("staleAfter", "stale_after"),
+            ("STALE-AFTER", "stale_after"),
+            ("taggs", "tags"),
+            ("tgas", "tags"),
+            ("BY", "by"),
+            ("deadlien", "deadline"),
+        ];
+        for (key, known) in close {
+            assert!(misspelled(key, known), "{key} not taken for {known}");
+        }
+        let far = [
+            ("confidence", "description"),
+            ("owner", "title"),
+            ("bx", "by"),
+            ("source_kind", "sources"),
+            ("tagline", "tags"),
+        ];
+        for (key, known) in far {
+            assert!(!misspelled(key, known), "{key} taken for {known}");
+        }
+    }
+
+    #[test]
     fn what_okf_allows_passes() {
         let two = "verified:\n  - {by: human:someone, at: 2026-09-28T10:00:00+09:00}\
                    \n  - {by: process:nightly, at: 2026-09-29T02:00:00Z}";
@@ -601,6 +745,21 @@ Not yet.
                     "status: stable",
                     "status: stable\ngenerated: {by: agent/v1, at: 2026-09-27T09:00:00Z}\
                      \nresource: https://example.com/x\nsources: [{resource: https://example.com/doc}]",
+                ),
+            ),
+            // OKF lets a producer add any key: one that is not close to a known field is an extension
+            (
+                "an extension field",
+                good(
+                    "status: stable",
+                    "status: stable\nconfidence: high\nowner: team:records",
+                ),
+            ),
+            (
+                "an extension in a source",
+                good(
+                    "status: stable",
+                    "status: stable\nsources: [{resource: x, accessed: 2026-10-01T00:00:00Z}]",
                 ),
             ),
             // OKF requires only `by` in `generated`
@@ -798,6 +957,47 @@ Not yet.
             (
                 "unknown field",
                 good("status: stable", "status: stable\nstatu: stable"),
+            ),
+            // Misspellings of a field OKF defines, and of one docket adds, in the forms they take
+            (
+                "a misspelled optional field",
+                good(
+                    "status: stable",
+                    "status: stable\nstale_afer: 2026-12-31T00:00:00Z",
+                ),
+            ),
+            (
+                "a field in another case style",
+                good(
+                    "status: stable",
+                    "status: stable\nstaleAfter: 2026-12-31T00:00:00Z",
+                ),
+            ),
+            (
+                "a field with a hyphen",
+                good(
+                    "status: stable",
+                    "status: stable\nstale-after: 2026-12-31T00:00:00Z",
+                ),
+            ),
+            (
+                "two letters swapped",
+                good("status: stable", "status: stable\nsoruces: []"),
+            ),
+            (
+                "a field in capitals",
+                good("status: stable", "status: stable\nTitle: x"),
+            ),
+            (
+                "a misspelled field docket adds",
+                good(
+                    "status: stable",
+                    "status: stable\ndeadlin: until the next deploy",
+                ),
+            ),
+            (
+                "a key that is not a name",
+                good("status: stable", "status: stable\n2026: x"),
             ),
             (
                 "closed without a resolution",

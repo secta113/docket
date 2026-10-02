@@ -96,8 +96,11 @@ stale_after: 2027-01-01T00:00:00+09:00   # optional: when to measure the state a
 
 - **The bundle is there:** `docs/`, `docs/index.md`, `docs/backlog/`, `docs/backlog/rules.md`, `docs/specs/` and
   `docs/done/` exist. Without them every other check would pass with nothing checked.
-- **Every backlog item keeps the format:** the fields above with their types, no unknown field, and non-empty
-  Trigger, State and Details (and Resolution when closed). A deadline is an event or a reason, never only a date
+- **Every backlog item keeps the format:** the fields above with their types, and non-empty Trigger, State and Details
+  (and Resolution when closed). A field docket does not know passes as an extension, as OKF allows, unless it looks
+  like a misspelling of a field the document type has (`stale_afer`, `staleAfter`, `Title`), or is a backlog item's
+  field on another type: those fail, in every document type, as a misspelled optional field would otherwise be
+  silently dropped. A deadline is an event or a reason, never only a date
   (`2026-10-31`, `2026/10/31`, `31.10.2026`, `2026年10月31日` or a month alone); an event may contain a date. Every
   time has a time zone. `stale_after` is later than the last `verified`. A required text is not blank (spaces alone
   are empty), in every document type, and no tag is empty.
