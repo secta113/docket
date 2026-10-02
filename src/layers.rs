@@ -293,14 +293,17 @@ pub fn area_problems(areas: &[String]) -> Vec<String> {
 
 /// The declaration, or why it cannot be read. `Ok(None)` when the file does not exist.
 pub fn declaration(root: &Path) -> io::Result<Option<Result<Declaration, String>>> {
-    let path = root.join(DECLARATION);
-    if !path.exists() {
-        return Ok(None);
-    }
-    // Found on Windows under another case, and missing on Linux and GitHub
-    if let Err(why) = crate::source::exactly(root, DECLARATION) {
-        return Ok(Some(Err(why)));
-    }
+    // By the exact name, before anything asks the operating system: `.config/Docket.toml` opens as the declaration on
+    // Windows, and is not there on Linux, where asking first would say only that the declaration is missing
+    let path = match crate::source::lookup(root, DECLARATION) {
+        crate::source::Lookup::Found(path) => path,
+        crate::source::Lookup::Missing => return Ok(None),
+        crate::source::Lookup::Spelled(_) => {
+            return Ok(Some(Err(
+                crate::source::exactly(root, DECLARATION).expect_err("spelled otherwise")
+            )));
+        }
+    };
     let text = fs::read_to_string(&path)
         .map_err(|e| io::Error::new(e.kind(), format!("{DECLARATION}: {e}")))?;
     Ok(Some(

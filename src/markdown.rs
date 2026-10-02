@@ -667,13 +667,16 @@ Text <!-- one line --> and text <!--
 
     #[test]
     fn a_stream_that_exists_is_not_found() {
-        // On Windows, `log.md:hidden` opens a stream of log.md once one is written: the operating system would find it
+        // On Windows, `log.md:hidden` opens a stream of log.md once one is written: the operating system would find it.
+        // On Linux the same write makes a file of that name, which GitHub serves too, so the link resolves there
         let root = tree();
         let docs = root.path().join("docs");
-        if fs::write(docs.join("log.md:hidden"), "hidden\n").is_err() {
-            return; // Not NTFS: no streams, and nothing that could pass
-        }
-        assert!(reasons(root.path(), &[("x", "/log.md:hidden")])[0].is_some());
+        fs::write(docs.join("log.md:hidden"), "hidden\n").unwrap();
+        let a_file: bool = fs::read_dir(&docs)
+            .unwrap()
+            .any(|entry| entry.unwrap().file_name() == "log.md:hidden");
+        let why = reasons(root.path(), &[("x", "/log.md:hidden")]).remove(0);
+        assert_eq!(why.is_none(), a_file, "{why:?}");
     }
 
     #[test]
