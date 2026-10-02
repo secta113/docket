@@ -2,6 +2,8 @@
 //!
 //! - **The tree matches `.config/docket.toml`**: the layers of the stack are present or declared absent, and no code
 //!   sits outside them (`structure.rs`).
+//! - **The layers import only what the table allows** (`direction.rs`), for `python`; the other stacks say that the
+//!   direction was not checked.
 //! - **The backlog works as a backlog**: every document keeps the format, every link in `# Details` resolves, and every
 //!   backlog item the log points to exists.
 //! - **Every record has one declared area**: the areas in `.config/docket.toml` are distinct headings, and the one tag
@@ -68,6 +70,8 @@ pub struct Report {
     pub findings: Vec<Finding>,
     /// Checks that did not run, and why
     pub skipped: Vec<String>,
+    /// Whether the tree was checked against a stack's layers (not for `stack = "none"`)
+    pub layers_checked: bool,
 }
 
 /// Every broken rule in the repository at `root`. An error is a file that could not be read at all.
@@ -81,10 +85,22 @@ pub fn check(root: &Path) -> io::Result<Report> {
             detail,
         })
         .collect();
+    let mut skipped: Vec<String> = structure.skipped.into_iter().collect();
+    let mut layers_checked = false;
+    if let Some(declared) = &structure.declared {
+        layers_checked = declared.layout.is_some();
+        let direction = crate::direction::problems(root, declared)?;
+        findings.extend(direction.found.into_iter().map(|detail| Finding {
+            check: "the layers import only what layers/table.toml allows",
+            detail,
+        }));
+        skipped.extend(direction.skipped);
+    }
     findings.extend(records(root)?);
     Ok(Report {
         findings,
-        skipped: structure.skipped.into_iter().collect(),
+        skipped,
+        layers_checked,
     })
 }
 

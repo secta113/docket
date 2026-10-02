@@ -183,7 +183,7 @@ impl Layout {
 }
 
 /// The names in backticks, joined as a sentence: "`a`, `b` and `c`".
-fn listed(names: &[String]) -> String {
+pub fn listed(names: &[String]) -> String {
     let names: Vec<String> = names.iter().map(|n| format!("`{n}`")).collect();
     match names.split_last() {
         None => String::new(),
@@ -346,6 +346,7 @@ pub fn declaration_text(stack: &str) -> String {
 }
 
 /// A declaration together with the layout it names. `Err` is every reason the two do not fit, for the check.
+#[derive(Debug)]
 pub struct Declared {
     pub declaration: Declaration,
     /// `None` for a repository that keeps records only (`stack = "none"`)

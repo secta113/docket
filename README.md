@@ -24,8 +24,9 @@ docket keeps a project's structure from drifting while LLMs and people change it
 - **Whoever picks up the work next reads one index, not every file.** The index files are generated, never written by
   hand.
 
-docket makes the layer directories and checks that they are where the project declares them. The direction of
-imports is still checked by each stack's own tool (import-linter for Python), until it moves into docket.
+docket makes the layer directories, checks that they are where the project declares them, and reads the imports to
+check their direction: in Python now, with Rust and TypeScript to follow. For those two, `docket check` says that it
+did not check the direction.
 
 The records live in `docs/`, which is a bundle in [OKF 0.2](https://github.com/GoogleCloudPlatform/open-knowledge-format)
 (its `SPEC.md` as of commit `ad30107`): every document has YAML frontmatter with a `type`, `index.md` and `log.md` are
@@ -176,6 +177,13 @@ stale_after: 2027-01-01T00:00:00+09:00   # optional: when to measure the state a
   `ui` holds only its levels: code in `ui` beside them fails, apart from the layer's own file (`ui/__init__.py`).
   What the whole UI shares goes in a level: a part that knows no project concept, visible or not (a design value, one
   behaviour, a provider of a theme), is an atom.
+- **The layers import only what the table allows** (Python): every `import` and `from ... import` in the layers,
+  relative ones and those inside functions or under `if TYPE_CHECKING:` included. A layer may import itself and the
+  layers in its `imports`; a level of `ui` the levels below it and the layers in its `imports`. Only direct imports
+  are judged: what the table allows is closed under chaining, so a chain of allowed imports never reaches a forbidden
+  layer. Imports of modules in no layer (the standard library, packages) are not judged, and imports built at run
+  time (`importlib`) are not seen. A file that is not UTF-8 or has a syntax error fails, since its imports cannot all
+  be read.
 
 - **The bundle is there:** `docs/`, `docs/index.md`, `docs/backlog/`, `docs/backlog/rules.md`, `docs/specs/`,
   `docs/specs/rules.md` and `docs/done/` exist, and the declaration with its `areas` can be read. Without them every other check would pass

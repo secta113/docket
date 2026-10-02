@@ -32,6 +32,7 @@ Also tracked, as in most repositories: `.gitattributes`, `.gitignore`, `Cargo.lo
 | `check.rs` | Every rule `docket check` runs, each with its floor |
 | `layers.rs` | Reading the layer definitions in `layers/` and a project's `.config/docket.toml` |
 | `structure.rs` | The structure check: the tree agrees with `.config/docket.toml`, either way |
+| `direction.rs` | The direction check: every layer imports only what `layers/table.toml` allows (Python) |
 | `init.rs` | `docket init`: writing a project's declaration, once |
 | `create.rs` | `docket create`: making the layers and the records skeleton a project lacks |
 | `bundle.rs` | Reading `docs/` as one OKF bundle, and the files docket generates in it (the index files and the rules) |

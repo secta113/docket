@@ -761,6 +761,165 @@ fn ui_parts_in_a_level_pass() {
     assert!(!said.contains("outside its levels"), "{said}");
 }
 
+/// Every place of the Python layout, in the order of the grid below.
+const PLACES: [&str; 11] = [
+    "handler",
+    "ui",
+    "ui.pages",
+    "ui.templates",
+    "ui.organisms",
+    "ui.molecules",
+    "ui.atoms",
+    "application",
+    "infrastructure",
+    "domain",
+    "utils",
+];
+
+/// Whether the place of a row may import the place of a column: the rule `layers/table.toml` states (each layer's
+/// `imports`, and a level of `ui` the levels below it), written out again by hand rather than computed by the check.
+/// A change to the table or to the check that moves any pair fails here, so moving one is a decision made twice.
+const MAY_IMPORT: [&str; 11] = [
+    // h  ui pg tp or mo at ap in do ut
+    "Y Y Y Y Y Y Y Y Y Y Y", // handler
+    "N Y Y Y Y Y Y Y N Y Y", // ui
+    "N N Y Y Y Y Y Y N Y Y", // ui.pages
+    "N N N Y Y Y Y N N Y Y", // ui.templates
+    "N N N N Y Y Y N N Y Y", // ui.organisms
+    "N N N N N Y Y N N N Y", // ui.molecules
+    "N N N N N N Y N N N Y", // ui.atoms
+    "N N N N N N N Y N Y Y", // application
+    "N N N N N N N N Y Y Y", // infrastructure
+    "N N N N N N N N N Y Y", // domain
+    "N N N N N N N N N N Y", // utils
+];
+
+#[test]
+fn every_pair_of_places_is_allowed_or_fails_as_the_table_says() {
+    let root = repo_with_ui("python", "");
+    let r = root.path();
+    // Each place's own file imports every place, one per line, in the order of PLACES
+    let imports: String = PLACES.iter().map(|to| format!("import {to}\n")).collect();
+    for from in PLACES {
+        fs::write(r.join(from.replace('.', "/")).join("__init__.py"), &imports).unwrap();
+    }
+    let out = run(&["--root", &root_arg(r), "check"]);
+    let said = stdout(&out);
+    let mut forbidden = 0;
+    for (row, from) in PLACES.iter().enumerate() {
+        let cells: Vec<&str> = MAY_IMPORT[row].split(' ').collect();
+        assert_eq!(cells.len(), PLACES.len(), "{from}");
+        for (column, to) in PLACES.iter().enumerate() {
+            let named = format!(
+                "{}/__init__.py:{}: imports {to}, ",
+                from.replace('.', "/"),
+                column + 1
+            );
+            match cells[column] {
+                "Y" => assert!(!said.contains(&named), "{from} -> {to} failed:\n{said}"),
+                _ => {
+                    forbidden += 1;
+                    assert!(said.contains(&named), "{from} -> {to} passed:\n{said}");
+                }
+            }
+        }
+    }
+    // The floor: every forbidden pair is one line, and nothing else failed
+    assert_eq!(forbidden, 68);
+    assert_eq!(said.matches(": imports ").count(), forbidden, "{said}");
+    assert_eq!(out.status.code(), Some(1));
+    assert!(said.contains("the layers import only what layers/table.toml allows:"));
+}
+
+#[test]
+fn every_form_of_import_is_judged() {
+    let root = repo_with_ui("python", "");
+    let r = root.path();
+    let write = |path: &str, text: &str| {
+        let full = r.join(path);
+        fs::create_dir_all(full.parent().unwrap()).unwrap();
+        fs::write(full, text).unwrap();
+    };
+    write(
+        "domain/model.py",
+        "import os\nimport requests\nfrom typing import TYPE_CHECKING\nif TYPE_CHECKING:\n    \
+         from application import play\ndef f():\n    import infrastructure.db\n",
+    );
+    write(
+        "ui/molecules/row.py",
+        "from .. import organisms\nfrom ..atoms import button\nfrom . import field\nfrom ui import pages\nimport ui\n",
+    );
+    // Not a layer, ignored by git, or hidden: not read
+    write("tests/test_x.py", "import handler\n");
+    write(".gitignore", "domain/generated/\n");
+    write("domain/generated/x.py", "import handler\n");
+    write("domain/.cache/x.py", "import handler\n");
+    let out = run(&["--root", &root_arg(r), "check"]);
+    let said = stdout(&out);
+    for line in [
+        "domain/model.py:5: imports application.play, in application; domain may import `utils`",
+        "domain/model.py:7: imports infrastructure.db, in infrastructure; ",
+        "ui/molecules/row.py:1: imports ui.organisms, in ui.organisms; ui.molecules may import the levels below it \
+         and `utils`",
+        "ui/molecules/row.py:4: imports ui.pages, in ui.pages; ",
+        "ui/molecules/row.py:5: imports ui, in ui outside its levels; ",
+    ] {
+        assert!(said.contains(line), "{line}:\n{said}");
+    }
+    assert_eq!(said.matches(": imports ").count(), 5, "{said}");
+}
+
+#[test]
+fn what_cannot_be_read_fails_and_what_is_not_there_is_not_judged() {
+    let root = repo_with_ui("python", "\"infrastructure\"");
+    let r = root.path();
+    // A layer declared absent is a module the project does not have: a package of the same name is not judged
+    fs::write(r.join("domain/model.py"), "import infrastructure.db\n").unwrap();
+    let out = run(&["--root", &root_arg(r), "check"]);
+    assert!(out.status.success(), "{}", stdout(&out));
+
+    fs::write(r.join("utils/broken.py"), "import os\ndef (:\n").unwrap();
+    fs::write(r.join("utils/latin.py"), b"x = '\xff'\n").unwrap();
+    let out = run(&["--root", &root_arg(r), "check"]);
+    let said = stdout(&out);
+    assert_eq!(out.status.code(), Some(1), "{said}");
+    assert!(
+        said.contains("utils/broken.py:2: cannot be read as Python ("),
+        "{said}"
+    );
+    assert!(
+        said.contains("utils/latin.py: cannot be read as UTF-8"),
+        "{said}"
+    );
+}
+
+#[test]
+fn the_stacks_without_a_direction_check_say_so() {
+    for stack in ["typescript", "rust"] {
+        let root = declared(&format!("stack = \"{stack}\"\nareas = [\"a\"]\n"));
+        let arg = root_arg(root.path());
+        assert!(run(&["--root", &arg, "create"]).status.success());
+        fs::write(
+            root.path().join("docs/log.md"),
+            "# Log\n\n## 2026-10-02\n\n* Something\n",
+        )
+        .unwrap();
+        let out = run(&["--root", &arg, "check"]);
+        let said = stdout(&out);
+        assert!(out.status.success(), "{stack}: {said}");
+        assert!(
+            said.contains(&format!(
+                "the direction of imports is not checked: docket does not read the imports of a {stack} project yet"
+            )),
+            "{stack}: {said}"
+        );
+        assert!(
+            said.contains("what was checked of the layers, and every record, keep the rules"),
+            "{stack}: {said}"
+        );
+    }
+}
+
 #[test]
 fn code_that_is_not_the_projects_is_not_looked_at() {
     let root = clean_repo();

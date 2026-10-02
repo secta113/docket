@@ -3,6 +3,7 @@
 pub mod bundle;
 pub mod check;
 pub mod create;
+pub mod direction;
 pub mod frontmatter;
 pub mod init;
 pub mod layers;

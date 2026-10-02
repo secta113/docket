@@ -30,6 +30,8 @@ pub struct Structure {
     pub found: Vec<String>,
     /// What was not checked, and why. Printed on every run, so a skipped check is never silent
     pub skipped: Option<String>,
+    /// The declaration with its layout, when it can be read and fits, for the checks that follow
+    pub declared: Option<Declared>,
 }
 
 /// Every way the tree at `root` differs from its declaration. An error is a file or directory that could not be read.
@@ -38,6 +40,7 @@ pub fn problems(root: &Path) -> io::Result<Structure> {
         Ok(Structure {
             found,
             skipped: None,
+            declared: None,
         })
     };
     let declared = match declaration(root)? {
@@ -54,6 +57,7 @@ pub fn problems(root: &Path) -> io::Result<Structure> {
             skipped: Some(format!(
                 "the layers are not checked: {DECLARATION} declares stack = \"none\" (records only)"
             )),
+            declared: Some(declared),
         });
     };
     let mut found = Vec::new();
@@ -159,6 +163,7 @@ pub fn problems(root: &Path) -> io::Result<Structure> {
     Ok(Structure {
         found,
         skipped: None,
+        declared: Some(declared),
     })
 }
 
@@ -203,7 +208,7 @@ fn first_entry(path: &str, dir: &str) -> String {
 
 /// Every code file in `dir` (from the root, "" for the root), from the root with `/`. Files the project's `.gitignore`
 /// files exclude, and hidden ones, are not looked at: see [`outside`].
-fn code_files(root: &Path, layout: &Layout, dir: &str) -> io::Result<Vec<String>> {
+pub fn code_files(root: &Path, layout: &Layout, dir: &str) -> io::Result<Vec<String>> {
     let mut found = Vec::new();
     if !exactly(root, dir).is_ok_and(|path| path.is_dir()) {
         return Ok(found);

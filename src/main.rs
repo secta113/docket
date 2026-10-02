@@ -110,10 +110,13 @@ fn check(root: &Path) -> Result<bool, String> {
         println!("  {}", finding.detail.replace('\n', "\n    "));
     }
     if found.is_empty() {
-        if report.skipped.is_empty() {
-            println!("the layers and every record keep the rules");
-        } else {
-            println!("every record keeps the rules");
+        match (report.layers_checked, report.skipped.is_empty()) {
+            (true, true) => println!("the layers and every record keep the rules"),
+            // What was not checked is printed above
+            (true, false) => {
+                println!("what was checked of the layers, and every record, keep the rules")
+            }
+            (false, _) => println!("every record keeps the rules"),
         }
     }
     Ok(found.is_empty())
