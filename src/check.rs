@@ -6,6 +6,8 @@
 //!   backlog item the log points to exists.
 //! - **Every record has one declared area**: the areas in `.config/docket.toml` are distinct headings, and the one tag
 //!   of every backlog item and spec is one of them.
+//! - **An epic closes after its parts**: a part's `epic` names another spec, one level deep, and no epic in
+//!   `docs/done/` has a part in `docs/specs/`.
 //! - **`docs/` is one OKF bundle**: every document is a known type in the directory for its type, a spec sits in the
 //!   directory for its status, every file docket generates (the index files and the backlog rules) equals what
 //!   `docket index` writes, and no spec sits at the root.
@@ -24,11 +26,10 @@ use chrono::NaiveDate;
 use percent_encoding::percent_decode_str;
 use regex::Regex;
 
-use crate::bundle::{Bundle, Docs, RESERVED, backlog, specs};
+use crate::bundle::{Bundle, Docs, RESERVED, backlog};
 use crate::frontmatter::split;
 use crate::layers::{DECLARATION, area_problems, areas};
 use crate::markdown::{broken, heading, links, visible};
-use crate::schema::SPEC_FOLDERS;
 use crate::source::{read_source, relative_path};
 
 /// Directory (relative to docs/, "" for the root) -> the document types allowed in it
@@ -169,15 +170,12 @@ fn records(root: &Path) -> io::Result<Vec<Finding>> {
         "every document is a known type in its place",
         pairs(&out_of_place),
     );
-    for (folder, _) in SPEC_FOLDERS {
-        let (_, bad) = specs(folder, &bundle.read_folder(folder)?, &bundle.areas);
-        add(
-            "every spec keeps the format",
-            bad.into_iter()
-                .map(|(name, why)| format!("{folder}/{name}: {why}"))
-                .collect(),
-        );
-    }
+    let specs = bundle.read_specs()?;
+    add("every spec keeps the format", pairs(&specs.problems));
+    add(
+        "an epic closes after its parts",
+        specs.closed_before_its_parts(),
+    );
     let (files, _) = bundle.expected()?;
     let stale: Vec<String> = files
         .into_iter()

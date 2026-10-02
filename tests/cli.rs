@@ -183,6 +183,49 @@ fn each_broken_rule_fails_under_its_check() {
 }
 
 #[test]
+fn an_epic_and_its_parts_are_checked_together() {
+    let spec = |epic: &str, status: &str| {
+        format!(
+            "---\ntype: Spec\ntitle: X\ndescription: Y.\ntags: [a]\nstatus: {status}\n{epic}---\n\n\
+             # Resolution\n\nDone.\n"
+        )
+    };
+    // (the check that must name it, the epic's directory, the slug the part names)
+    let cases = [
+        ("an epic closes after its parts", "done", "big"),
+        ("every spec keeps the format", "specs", "no-such-spec"),
+    ];
+    for (check, epic_folder, named) in cases {
+        let root = clean_repo();
+        let r = root.path();
+        let status = if epic_folder == "done" {
+            "deprecated"
+        } else {
+            "stable"
+        };
+        fs::write(
+            r.join(format!("docs/{epic_folder}/big.md")),
+            spec("", status),
+        )
+        .unwrap();
+        fs::write(
+            r.join("docs/specs/part.md"),
+            spec(&format!("epic: {named}\n"), "stable"),
+        )
+        .unwrap();
+        // The index files are current, so only the relation can fail
+        assert!(run(&["--root", &root_arg(r), "index"]).status.success());
+        let out = run(&["--root", &root_arg(r), "check"]);
+        assert_eq!(out.status.code(), Some(1), "{check}: {}", stdout(&out));
+        assert!(
+            stdout(&out).contains(&format!("{check}:")),
+            "{check} did not name it: {}",
+            stdout(&out)
+        );
+    }
+}
+
+#[test]
 fn index_writes_every_index_file() {
     let root = repo();
     let out = run(&["--root", &root_arg(root.path()), "index"]);

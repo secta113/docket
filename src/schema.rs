@@ -22,25 +22,43 @@ pub type Time = DateTime<FixedOffset>;
 /// Body headings every backlog item needs. A closed item also needs `CLOSED_SECTION`
 pub const SECTIONS: [&str; 3] = ["Trigger", "State", "Details"];
 pub const CLOSED_SECTION: &str = "Resolution";
-/// The fields only a backlog item reads (`filed`, `deadline_kind`, `deadline`), found from the readers, so a field
-/// added to the item is in it with no list to update. On another type, one is not an extension: it is a sign of the
-/// wrong `type`, under which the item's trigger and deadline would go unchecked
-static ITEM_ONLY: LazyLock<Vec<&'static str>> = LazyLock::new(|| {
-    let others = [
-        keys_read(|fields| {
-            guide(fields);
-        }),
-        keys_read(|fields| {
-            spec_fields(fields);
-        }),
-    ]
-    .concat();
-    keys_read(|fields| {
-        item(fields);
-    })
-    .into_iter()
-    .filter(|key| !others.contains(key))
-    .collect()
+/// The fields only one type reads, with that type: a backlog item's `filed`, `deadline_kind` and `deadline`, and a
+/// spec's `epic`. Found from the readers, so a field added to a type is in it with no list to update. On another type,
+/// one is not an extension: it is a sign of the wrong `type`, under which the item's trigger and deadline, or the
+/// spec's place in its epic, would go unchecked
+static OWN_FIELDS: LazyLock<Vec<(&'static str, &'static str)>> = LazyLock::new(|| {
+    let readers = [
+        (
+            "backlog item",
+            keys_read(|fields| {
+                item(fields);
+            }),
+        ),
+        (
+            "spec",
+            keys_read(|fields| {
+                spec_fields(fields);
+            }),
+        ),
+        (
+            "guide",
+            keys_read(|fields| {
+                guide(fields);
+            }),
+        ),
+    ];
+    let mut own = Vec::new();
+    for (kind, keys) in &readers {
+        for key in keys {
+            let elsewhere = readers
+                .iter()
+                .any(|(other, keys)| other != kind && keys.contains(key));
+            if !elsewhere {
+                own.push((*key, *kind));
+            }
+        }
+    }
+    own
 });
 
 /// Directory -> the statuses a spec in it may have. The directory answers only "current or finished"
@@ -148,6 +166,9 @@ pub struct Spec {
     /// The area. The index files group specs by it
     pub tag: String,
     pub status: Status,
+    /// The slug of the spec this one is a part of. Whether it names one is checked against the other specs, which the
+    /// document alone does not know (`bundle.rs`)
+    pub epic: Option<String>,
 }
 
 /// A document in `docs/backlog/`.
@@ -222,6 +243,7 @@ fn spec_fields(fields: &mut Fields) -> Option<Spec> {
         status(&[Status::Draft, Status::Stable, Status::Deprecated]),
     );
     let tag = fields.required("tags", one_tag);
+    let epic = fields.optional("epic", slug);
     fields.optional("verified", stamps);
     fields.optional("stale_after", time);
     okf_optional(fields);
@@ -230,6 +252,7 @@ fn spec_fields(fields: &mut Fields) -> Option<Spec> {
         description: description?,
         tag: tag?,
         status: status?,
+        epic: epic?,
     })
 }
 
@@ -393,11 +416,11 @@ impl<'a> Fields<'a> {
                     if let Some(meant) = self.read.iter().find(|known| misspelled(name, known)) {
                         self.errors
                             .push(format!("unknown field: {name}; did you mean {meant}?"));
-                    } else if let Some(theirs) =
-                        ITEM_ONLY.iter().find(|field| misspelled(name, field))
+                    } else if let Some((theirs, kind)) =
+                        OWN_FIELDS.iter().find(|(field, _)| misspelled(name, field))
                     {
                         self.errors.push(format!(
-                            "unknown field: {name}; {theirs} is a field of a backlog item, not of this type"
+                            "unknown field: {name}; {theirs} is a field of a {kind}, not of this type"
                         ));
                     }
                 }
@@ -611,6 +634,23 @@ fn text_list(value: &Yaml) -> Result<Vec<String>, String> {
     }
 }
 
+/// The slug of a document: its file name without `.md`, which never changes once the file exists. Not a path, so it
+/// still names the document after a move between `docs/specs/` and `docs/done/`.
+fn slug(value: &Yaml) -> Result<String, String> {
+    let s = non_empty_text(value)?;
+    if s.contains(['/', '\\']) {
+        Err(format!(
+            "{s} is a path; write the slug, the file name without .md"
+        ))
+    } else if let Some(stem) = s.strip_suffix(".md") {
+        Err(format!("{s} is a file name; write the slug, {stem}"))
+    } else if s.trim() != s {
+        Err(format!("{s:?} has a space at one end"))
+    } else {
+        Ok(s)
+    }
+}
+
 /// Exactly one tag: the area the index groups a backlog item or a spec by. Whether it is declared is checked against
 /// the declaration, which the document alone does not know (`bundle.rs`).
 fn one_tag(value: &Yaml) -> Result<String, String> {
@@ -683,8 +723,16 @@ Not yet.
     }
 
     #[test]
-    fn the_item_s_own_fields_are_found_from_the_readers() {
-        assert_eq!(*ITEM_ONLY, ["filed", "deadline_kind", "deadline"]);
+    fn each_type_s_own_fields_are_found_from_the_readers() {
+        assert_eq!(
+            *OWN_FIELDS,
+            [
+                ("filed", "backlog item"),
+                ("deadline_kind", "backlog item"),
+                ("deadline", "backlog item"),
+                ("epic", "spec"),
+            ]
+        );
         // Every field the item reads is found, optional ones included
         let item_keys = keys_read(|fields| {
             item(fields);
@@ -701,14 +749,27 @@ Not yet.
     }
 
     #[test]
-    fn an_item_s_field_fails_on_every_other_type() {
+    fn a_type_s_own_field_fails_on_every_other_type() {
         let guide = "---\ntype: Guide\ntitle: Rules\ndescription: What goes here.\n---\n\n# What goes here\n";
-        assert!(ITEM_ONLY.len() >= 3, "{:?}", *ITEM_ONLY);
-        for field in ITEM_ONLY.iter() {
+        assert!(OWN_FIELDS.len() >= 4, "{:?}", *OWN_FIELDS);
+        for (field, kind) in OWN_FIELDS.iter() {
             let on_guide = guide.replace("type: Guide", &format!("type: Guide\n{field}: x"));
             assert!(backlog_doc(&on_guide).is_err(), "{field} passed on a guide");
-            let on_spec = SPEC.replace("status: stable", &format!("status: stable\n{field}: x"));
-            assert!(spec("specs", &on_spec).is_err(), "{field} passed on a spec");
+            if *kind != "spec" {
+                let on_spec =
+                    SPEC.replace("status: stable", &format!("status: stable\n{field}: x"));
+                assert!(spec("specs", &on_spec).is_err(), "{field} passed on a spec");
+            }
+            if *kind != "backlog item" {
+                let on_item =
+                    GOOD.replace("status: stable", &format!("status: stable\n{field}: x"));
+                let why = backlog_doc(&on_item).err();
+                assert!(
+                    why.as_ref()
+                        .is_some_and(|why| why.contains(&format!("a field of a {kind}"))),
+                    "{field} on a backlog item: {why:?}"
+                );
+            }
         }
     }
 
@@ -1102,6 +1163,11 @@ Something.
             "{:?}",
             spec("specs", SPEC).err()
         );
+        let part = SPEC.replace("status: stable", "status: stable\nepic: big-work");
+        assert_eq!(
+            spec("specs", &part).map(|(spec, _)| spec.epic),
+            Ok(Some("big-work".into()))
+        );
         let closed =
             SPEC.replace("status: stable", "status: deprecated") + "\n# Resolution\n\nDone.\n";
         assert!(
@@ -1137,6 +1203,32 @@ Something.
             ),
             // A spec has exactly one area, as a backlog item does
             ("specs", "no tag", SPEC.replace("tags: [operations]\n", "")),
+            // An epic is named by its slug, which survives the move to done/
+            (
+                "specs",
+                "an epic named by its path",
+                SPEC.replace("status: stable", "status: stable\nepic: /done/big.md"),
+            ),
+            (
+                "specs",
+                "an epic named by its path without .md",
+                SPEC.replace("status: stable", "status: stable\nepic: done/big"),
+            ),
+            (
+                "specs",
+                "an epic named by its file name",
+                SPEC.replace("status: stable", "status: stable\nepic: big.md"),
+            ),
+            (
+                "specs",
+                "an empty epic",
+                SPEC.replace("status: stable", "status: stable\nepic: \"\""),
+            ),
+            (
+                "specs",
+                "a misspelled epic",
+                SPEC.replace("status: stable", "status: stable\nepik: big"),
+            ),
             (
                 "specs",
                 "two tags",

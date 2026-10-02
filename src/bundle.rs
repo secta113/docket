@@ -95,6 +95,126 @@ pub fn specs(
     (passed, problems)
 }
 
+/// The specs of `docs/specs/` and `docs/done/`, read together: a part names its epic by slug, in either directory.
+#[derive(Debug, Default)]
+pub struct Specs {
+    /// Directory -> file name -> the spec, for the specs that pass
+    pub folders: BTreeMap<&'static str, BTreeMap<String, (Spec, Sections)>>,
+    /// `<directory>/<file name>` -> why the spec is left out of the index files
+    pub problems: Problems,
+}
+
+impl Specs {
+    /// The spec with this slug, and its directory.
+    pub fn find(&self, slug: &str) -> Option<(&'static str, &Spec)> {
+        let name = format!("{slug}.md");
+        self.folders
+            .iter()
+            .find_map(|(folder, specs)| specs.get(&name).map(|(spec, _)| (*folder, spec)))
+    }
+
+    /// The open parts of a closed epic. An epic closes after its parts, so one of the two is in the wrong directory.
+    /// They stay in the index files: the relation is clear, and leaving the open part out would hide open work.
+    pub fn closed_before_its_parts(&self) -> Vec<String> {
+        let Some(open) = self.folders.get("specs") else {
+            return Vec::new();
+        };
+        open.iter()
+            .filter_map(|(name, (spec, _))| {
+                let epic = spec.epic.as_ref()?;
+                let ("done", _) = self.find(epic)? else {
+                    return None;
+                };
+                Some(format!(
+                    "specs/{name}: its epic {epic} is closed in done/ while this part is open. Close the part \
+                     first (as dropped, if it was), or reopen the epic"
+                ))
+            })
+            .collect()
+    }
+
+    /// Take the specs at `<directory>/<file name>` out of the index files, with why.
+    fn leave_out(&mut self, left: Problems) {
+        for (path, why) in left {
+            if let Some((folder, name)) = path.split_once('/')
+                && let Some(specs) = self.folders.get_mut(folder)
+            {
+                specs.remove(name);
+            }
+            self.problems.insert(path, why);
+        }
+    }
+}
+
+/// Every spec of `docs/specs/` and `docs/done/` (directory -> its documents), checked one by one and against each
+/// other. A spec is left out of the index files when its relation to its epic is undefined: the epic is missing, is
+/// itself, or is a part of another; or when its slug is in both directories, where an epic naming it would be
+/// ambiguous.
+pub fn all_specs(folders: &[(&'static str, Docs)], areas: &[String]) -> Specs {
+    let mut out = Specs::default();
+    for (folder, docs) in folders {
+        let (passed, bad) = specs(folder, docs, areas);
+        out.folders.insert(folder, passed);
+        out.problems.extend(
+            bad.into_iter()
+                .map(|(name, why)| (format!("{folder}/{name}"), why)),
+        );
+    }
+    let mut left = Problems::new();
+    for (folder, docs) in folders {
+        for name in docs.keys() {
+            let elsewhere: Vec<&str> = folders
+                .iter()
+                .filter(|(other, docs)| other != folder && docs.contains_key(name))
+                .map(|(other, _)| *other)
+                .collect();
+            if !elsewhere.is_empty() {
+                left.insert(
+                    format!("{folder}/{name}"),
+                    format!(
+                        "the same slug is in {}/ too: a spec moves between the directories, it is not copied",
+                        elsewhere.join("/, ")
+                    ),
+                );
+            }
+        }
+    }
+    out.leave_out(left);
+
+    let mut left = Problems::new();
+    for (folder, specs) in &out.folders {
+        for (name, (spec, _)) in specs {
+            let Some(epic) = &spec.epic else {
+                continue;
+            };
+            let file = format!("{epic}.md");
+            let why = if file == *name {
+                "names the spec itself".to_string()
+            } else {
+                match out.find(epic) {
+                    Some((_, epic_spec)) => match &epic_spec.epic {
+                        Some(above) => format!(
+                            "{epic} is itself a part of {above}: an epic is one level deep, so name {above} or \
+                             remove one of the two"
+                        ),
+                        None => continue,
+                    },
+                    None if folders.iter().any(|(_, docs)| docs.contains_key(&file)) => {
+                        format!("{epic} is left out of the index files itself: fix it first")
+                    }
+                    None => format!(
+                        "names no spec in docs/specs/ or docs/done/: {epic} (a backlog item or a guide is not a \
+                         spec)"
+                    ),
+                }
+            };
+            left.insert(format!("{folder}/{name}"), format!("epic: {why}"));
+        }
+    }
+    out.leave_out(left);
+    out
+}
+
 /// Why a tag is not an area, with the areas it could be.
 fn undeclared(tag: &str, areas: &[String]) -> String {
     let declared = if areas.is_empty() {
@@ -154,18 +274,24 @@ impl Bundle {
             ),
         ];
         let mut problems = backlog.problems;
+        let specs = self.read_specs()?;
         for (folder, _) in SPEC_FOLDERS {
-            let (passed, bad) = specs(folder, &self.read_folder(folder)?, &self.areas);
             files.push((
                 self.docs.join(folder).join("index.md"),
-                render_specs(&passed, &self.areas),
+                render_specs(folder, &specs, &self.areas),
             ));
-            problems.extend(
-                bad.into_iter()
-                    .map(|(name, why)| (format!("{folder}/{name}"), why)),
-            );
         }
+        problems.extend(specs.problems);
         Ok((files, problems))
+    }
+
+    /// Every spec of `docs/specs/` and `docs/done/`, checked one by one and against each other.
+    pub fn read_specs(&self) -> io::Result<Specs> {
+        let folders = SPEC_FOLDERS
+            .iter()
+            .map(|(folder, _)| Ok((*folder, self.read_folder(folder)?)))
+            .collect::<io::Result<Vec<_>>>()?;
+        Ok(all_specs(&folders, &self.areas))
     }
 }
 
@@ -279,27 +405,62 @@ fn open_line(name: &str, item: &Item, sections: &Sections) -> String {
 
 /// The index of `specs/` or `done/`: the specs by area, in the order `areas` declares them. A spec in progress shows
 /// its status; a closed one its resolution.
-pub fn render_specs(specs: &BTreeMap<String, (Spec, Sections)>, areas: &[String]) -> String {
+///
+/// A part in the same area and the same directory as its epic is listed under it, indented. Any other part (in another
+/// area, or in the other directory) is listed under its own area with its epic after its line, so each index lists only
+/// its own directory and each spec appears once.
+pub fn render_specs(folder: &str, all: &Specs, areas: &[String]) -> String {
+    let empty = BTreeMap::new();
+    let here = all.folders.get(folder).unwrap_or(&empty);
+    // The epic a part is listed under, in this index
+    let nested_in = |spec: &Spec| -> Option<String> {
+        let epic = spec.epic.as_ref()?;
+        let name = format!("{epic}.md");
+        let (epic_spec, _) = here.get(&name)?;
+        (epic_spec.tag == spec.tag).then_some(name)
+    };
+    let line = |name: &str, spec: &Spec, sections: &Sections| {
+        let after = if spec.status == Status::Deprecated {
+            format!("Resolution: {}", first_sentence(&sections[CLOSED_SECTION]))
+        } else {
+            format!("Status: {}.", spec.status.name())
+        };
+        let epic = match &spec.epic {
+            Some(epic) if nested_in(spec).is_none() => {
+                let (epic_folder, epic_spec) = all
+                    .find(epic)
+                    .expect("all_specs leaves out a part whose epic it cannot find");
+                let target = if epic_folder == folder {
+                    format!("{epic}.md")
+                } else {
+                    format!("../{epic_folder}/{epic}.md")
+                };
+                format!(" | Epic: [{}]({target})", epic_spec.title)
+            }
+            _ => String::new(),
+        };
+        format!(
+            "* [{}]({name}) - {} | {after}{epic}",
+            spec.title, spec.description
+        )
+    };
     let mut out = vec![GENERATED.to_string()];
     for area in areas {
-        let in_area: Vec<_> = specs
+        let top: Vec<_> = here
             .iter()
-            .filter(|(_, (spec, _))| &spec.tag == area)
+            .filter(|(_, (spec, _))| &spec.tag == area && nested_in(spec).is_none())
             .collect();
-        if in_area.is_empty() {
+        if top.is_empty() {
             continue;
         }
         out.extend(["".into(), format!("# {area}"), "".into()]);
-        for (name, (spec, sections)) in in_area {
-            let after = if spec.status == Status::Deprecated {
-                format!("Resolution: {}", first_sentence(&sections[CLOSED_SECTION]))
-            } else {
-                format!("Status: {}.", spec.status.name())
-            };
-            out.push(format!(
-                "* [{}]({name}) - {} | {after}",
-                spec.title, spec.description
-            ));
+        for (name, (spec, sections)) in top {
+            out.push(line(name, spec, sections));
+            for (part_name, (part, part_sections)) in here {
+                if nested_in(part).as_ref() == Some(name) {
+                    out.push(format!("  {}", line(part_name, part, part_sections)));
+                }
+            }
         }
     }
     out.join("\n") + "\n"
@@ -531,10 +692,10 @@ Not yet. Measured by hand.
             ("c.md".to_string(), spec("billing")),
         ]
         .into();
-        let (passed, problems) = specs("specs", &docs, &areas());
-        assert!(problems.is_empty(), "{problems:?}");
+        let all = all_specs(&[("specs", docs), ("done", Docs::new())], &areas());
+        assert!(all.problems.is_empty(), "{:?}", all.problems);
         assert_eq!(
-            outline(&render_specs(&passed, &areas())),
+            outline(&render_specs("specs", &all, &areas())),
             [
                 "# operations",
                 "* [S](b.md",
@@ -542,6 +703,169 @@ Not yet. Measured by hand.
                 "* [S](a.md",
                 "* [S](c.md"
             ]
+        );
+    }
+
+    /// A spec titled after its slug: in `docs/specs/` open, in `docs/done/` closed.
+    fn spec_doc(slug: &str, tag: &str, epic: Option<&str>, done: bool) -> (String, String) {
+        let epic = epic.map(|e| format!("epic: {e}\n")).unwrap_or_default();
+        let (status, resolution) = if done {
+            ("deprecated", "\n# Resolution\n\nDone.\n")
+        } else {
+            ("stable", "")
+        };
+        (
+            format!("{slug}.md"),
+            format!(
+                "---\ntype: Spec\ntitle: {slug}\ndescription: D.\ntags: [{tag}]\nstatus: {status}\n{epic}---\n{resolution}"
+            ),
+        )
+    }
+
+    fn folders(
+        open: Vec<(String, String)>,
+        done: Vec<(String, String)>,
+    ) -> Vec<(&'static str, Docs)> {
+        vec![
+            ("specs", open.into_iter().collect()),
+            ("done", done.into_iter().collect()),
+        ]
+    }
+
+    #[test]
+    fn a_part_is_listed_under_its_epic_or_names_it() {
+        let all = all_specs(
+            &folders(
+                vec![
+                    spec_doc("big", "operations", None, false),
+                    // Same area, same index: under the epic
+                    spec_doc("part-b", "operations", Some("big"), false),
+                    spec_doc("part-a", "operations", Some("big"), false),
+                    // Another area: under its own area, naming the epic
+                    spec_doc("part-c", "billing", Some("big"), false),
+                    spec_doc("alone", "operations", None, false),
+                ],
+                // Finished part of an open epic: in the other index, naming it
+                vec![spec_doc("part-d", "operations", Some("big"), true)],
+            ),
+            &areas(),
+        );
+        assert!(all.problems.is_empty(), "{:?}", all.problems);
+        assert_eq!(all.closed_before_its_parts(), Vec::<String>::new());
+        let open = render_specs("specs", &all, &areas());
+        assert_eq!(
+            open.lines()
+                .filter(|l| l.contains("]("))
+                .collect::<Vec<_>>(),
+            [
+                "* [alone](alone.md) - D. | Status: stable.",
+                "* [big](big.md) - D. | Status: stable.",
+                "  * [part-a](part-a.md) - D. | Status: stable.",
+                "  * [part-b](part-b.md) - D. | Status: stable.",
+                "* [part-c](part-c.md) - D. | Status: stable. | Epic: [big](big.md)",
+            ]
+        );
+        assert_eq!(
+            render_specs("done", &all, &areas())
+                .lines()
+                .filter(|l| l.contains("]("))
+                .collect::<Vec<_>>(),
+            ["* [part-d](part-d.md) - D. | Resolution: Done. | Epic: [big](../specs/big.md)"]
+        );
+    }
+
+    #[test]
+    fn an_epic_closes_after_its_parts() {
+        let all = all_specs(
+            &folders(
+                vec![spec_doc("part", "operations", Some("big"), false)],
+                vec![spec_doc("big", "operations", None, true)],
+            ),
+            &areas(),
+        );
+        // The open part stays listed, naming its closed epic, and the check names the order
+        assert!(all.problems.is_empty(), "{:?}", all.problems);
+        assert!(render_specs("specs", &all, &areas()).contains("| Epic: [big](../done/big.md)"));
+        let found = all.closed_before_its_parts();
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert!(found[0].starts_with("specs/part.md: its epic big is closed"));
+    }
+
+    #[test]
+    fn an_undefined_epic_leaves_the_part_out() {
+        let broken = (
+            "broken.md".to_string(),
+            "---\ntype: Spec\ntitle: B\n---\n".to_string(),
+        );
+        let cases = [
+            (
+                "no such spec",
+                spec_doc("p", "operations", Some("nowhere"), false),
+                "names no spec",
+            ),
+            // A backlog item has a slug too, but it is not a spec
+            (
+                "a backlog item",
+                spec_doc("p", "operations", Some("some-item"), false),
+                "names no spec",
+            ),
+            (
+                "itself",
+                spec_doc("p", "operations", Some("p"), false),
+                "names the spec itself",
+            ),
+            (
+                "a part",
+                spec_doc("p", "operations", Some("mid"), false),
+                "one level deep",
+            ),
+            (
+                "a spec that fails",
+                spec_doc("p", "operations", Some("broken"), false),
+                "left out of the index",
+            ),
+        ];
+        for (name, part, said) in cases {
+            let all = all_specs(
+                &folders(
+                    vec![
+                        part,
+                        spec_doc("top", "operations", None, false),
+                        spec_doc("mid", "operations", Some("top"), false),
+                        broken.clone(),
+                    ],
+                    vec![],
+                ),
+                &areas(),
+            );
+            assert!(
+                !all.folders["specs"].contains_key("p.md"),
+                "{name}: still listed"
+            );
+            let why = all
+                .problems
+                .get("specs/p.md")
+                .map(String::as_str)
+                .unwrap_or("");
+            assert!(
+                why.starts_with("epic: ") && why.contains(said),
+                "{name}: {why:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_slug_in_both_directories_is_left_out() {
+        let all = all_specs(
+            &folders(
+                vec![spec_doc("x", "operations", None, false)],
+                vec![spec_doc("x", "operations", None, true)],
+            ),
+            &areas(),
+        );
+        assert_eq!(
+            all.problems.keys().collect::<Vec<_>>(),
+            ["done/x.md", "specs/x.md"]
         );
     }
 }

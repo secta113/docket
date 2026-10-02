@@ -125,6 +125,23 @@ no record uses passes, so an area is declared before its first record. Renaming 
 of every record in it, closed ones included: the tag is frontmatter for the index, not history. Guides keep their
 optional tags, which name no area.
 
+A large piece of work is split into specs that are parts of an epic. The epic is a spec like any other, with goals and
+an order of work of its own; a part names it by slug (its file name without `.md`) in `epic`:
+
+```yaml
+type: Spec
+title: Publish docket for every stack
+status: stable
+tags: [docket]
+epic: template-multi-stack
+```
+
+The two are independent: an area says where a record belongs and never closes, an epic says which piece of work a
+spec is part of and closes when the work is finished. A part may be in another area than its epic. A spec that cannot
+name one area mixes two, so it is split into one part per area, and the epic ties the parts back into one piece of
+work. In an index, a part in the same area and the same directory as its epic is listed under it, indented; any other
+part is listed under its own area with `Epic: [<title>](...)` after its line, so each spec appears once.
+
 A backlog item has this frontmatter and these body headings:
 
 ```markdown
@@ -161,9 +178,9 @@ stale_after: 2027-01-01T00:00:00+09:00   # optional: when to measure the state a
 - **The areas are distinct headings:** none is empty or has a space at either end, and no two differ only in case.
 - **Every backlog item keeps the format:** the fields above with their types, and non-empty Trigger, State and Details
   (and Resolution when closed). A field docket does not know passes as an extension, as OKF allows, unless it looks
-  like a misspelling of a field the document type has (`stale_afer`, `staleAfter`, `Title`), or is a backlog item's
-  field on another type: those fail, in every document type, as a misspelled optional field would otherwise be
-  silently dropped. A deadline is an event or a reason, never only a date
+  like a misspelling of a field the document type has (`stale_afer`, `staleAfter`, `Title`), or is a field only
+  another type has (a backlog item's `deadline` on a spec, a spec's `epic` on a backlog item): those fail, in every
+  document type, as a misspelled optional field would otherwise be silently dropped. A deadline is an event or a reason, never only a date
   (`2026-10-31`, `2026/10/31`, `31.10.2026`, `2026年10月31日` or a month alone); an event may contain a date. Every
   time has a time zone. `stale_after` is later than the last `verified`. A required text is not blank (spaces alone
   are empty), in every document type, and no tag is empty. The one tag is a declared area, and the message lists the
@@ -177,7 +194,12 @@ stale_after: 2027-01-01T00:00:00+09:00   # optional: when to measure the state a
   (`render_index()`) or a dotted path (`Bundle.render`); when it names nothing, the message says which name to write
   or lists the names the file defines.
 - **Every spec keeps the format:** `title`, `description`, `status` and exactly one declared area in `tags`, a status
-  that matches its directory, and a non-empty `# Resolution` once it is closed.
+  that matches its directory, and a non-empty `# Resolution` once it is closed. `epic`, when present, is the slug of
+  another spec in `docs/specs/` or `docs/done/` (not a path, not a backlog item or a guide, not the spec itself), and
+  that spec has no `epic` of its own: one level only. A slug is in one of the two directories, never both. A spec
+  that breaks one of these is left out of the index files.
+- **An epic closes after its parts:** an epic in `docs/done/` has no part in `docs/specs/`. A part that is dropped
+  closes as dropped, as any spec does.
 - **The log exists, points only at backlog items that exist** (`backlog/<slug>.md`, written with `/` or `\`, the
   slug percent-encoded or not), and its second-level headings are dates, newest first. Below the title, the log is
   a flat list of entries grouped under the dates (OKF 0.2, section 9): every entry is a list item, and its indented
