@@ -1,0 +1,476 @@
+//! The layers: what they are (the table, the same in every stack), where they live (one layout per stack), and what a
+//! project declares (`.config/docket.toml`).
+//!
+//! The table and the layouts are data files in `layers/`, built into the binary, so reviewing a layout means reading
+//! one file.
+
+use std::collections::BTreeMap;
+use std::fs;
+use std::io;
+use std::path::Path;
+
+use serde::Deserialize;
+
+/// Where a project declares its structure, from the root
+pub const DECLARATION: &str = ".config/docket.toml";
+/// What to do when the declaration is missing
+pub const MISSING: &str =
+    "missing: .config/docket.toml. Write it with `docket init --stack <stack>`";
+/// The stack of a repository that keeps records only: no layers, and no structure to check
+pub const RECORDS_ONLY: &str = "none";
+
+const TABLE: &str = include_str!("../layers/table.toml");
+/// Stack -> its layout
+pub const STACKS: [(&str, &str); 3] = [
+    ("python", include_str!("../layers/python.toml")),
+    ("typescript", include_str!("../layers/typescript.toml")),
+    ("rust", include_str!("../layers/rust.toml")),
+];
+
+/// One layer, or one atomic level of `ui`, as the table describes it.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Entry {
+    pub name: String,
+    pub imports: Vec<String>,
+    pub role: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Table {
+    #[serde(rename = "layer")]
+    pub layers: Vec<Entry>,
+    /// The atomic levels of `ui`, top first
+    #[serde(rename = "level")]
+    pub levels: Vec<Entry>,
+}
+
+/// The table built into docket.
+pub fn table() -> Table {
+    toml::from_str(TABLE).expect("layers/table.toml is valid: a test reads it")
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct File {
+    pub path: String,
+    pub text: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Shape {
+    /// `{name}` is the layer's name
+    pub path: String,
+    pub files: Vec<File>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Override {
+    pub files: Vec<File>,
+}
+
+/// Where the layers live in one stack.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Layout {
+    /// The directory, from the root, where code is looked for ("" for the root)
+    pub scope: String,
+    /// What a code file is named: `*`, `*.<extension>` or an exact name
+    pub code: String,
+    /// Paths that are not layers and hold code all the same, as `tests/`
+    pub not_layers: Vec<String>,
+    /// Each line of a layer's documentation starts with this
+    pub doc_prefix: String,
+    /// Layers of the table this stack does not have
+    #[serde(default)]
+    pub without: Vec<String>,
+    pub layer: Shape,
+    /// The atomic levels of `ui`. Required unless `ui` is in `without`
+    pub level: Option<Shape>,
+    /// Layer -> files that replace the ones in `layer`
+    #[serde(default)]
+    pub layers: BTreeMap<String, Override>,
+}
+
+/// One place in the tree a layout makes: a layer (`domain`) or a level of `ui` (`ui.pages`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Place {
+    /// The name `absent` uses: `domain`, `ui.pages`
+    pub name: String,
+    /// From the root, with `/`
+    pub path: String,
+    /// The layer it sits in, for a level of `ui`
+    pub parent: Option<String>,
+    /// Path from the root -> text
+    pub files: Vec<(String, String)>,
+}
+
+/// The layout of a stack, or `None` when docket has none by that name.
+pub fn layout(stack: &str) -> Option<Layout> {
+    STACKS
+        .iter()
+        .find(|(name, _)| *name == stack)
+        .map(|(name, text)| {
+            toml::from_str(text)
+                .unwrap_or_else(|e| panic!("layers/{name}.toml is valid, a test reads it: {e}"))
+        })
+}
+
+impl Layout {
+    /// Every place of this layout, layers first in the table's order, each followed by its levels.
+    pub fn places(&self, table: &Table) -> Vec<Place> {
+        let mut out = Vec::new();
+        // A layer documents only the imports this stack has: a Rust crate cannot import `ui`
+        let has = |name: &String| !self.without.contains(name);
+        for layer in table.layers.iter().filter(|l| has(&l.name)) {
+            let layer = &Entry {
+                imports: layer.imports.iter().filter(|n| has(n)).cloned().collect(),
+                ..layer.clone()
+            };
+            let files = self
+                .layers
+                .get(&layer.name)
+                .map_or(&self.layer.files, |o| &o.files);
+            let path = self.layer.path.replace("{name}", &layer.name);
+            out.push(Place {
+                name: layer.name.clone(),
+                files: render(
+                    files,
+                    &path,
+                    &layer.name,
+                    &self.doc_prefix,
+                    &layer_doc(layer),
+                ),
+                path,
+                parent: None,
+            });
+            if layer.name != "ui" {
+                continue;
+            }
+            let level = self
+                .level
+                .as_ref()
+                .expect("a layout with ui has its levels: a test reads every layout");
+            for (i, entry) in table.levels.iter().enumerate() {
+                let path = level.path.replace("{name}", &entry.name);
+                let doc = level_doc(entry, i + 1 < table.levels.len());
+                out.push(Place {
+                    name: format!("ui.{}", entry.name),
+                    files: render(&level.files, &path, &entry.name, &self.doc_prefix, &doc),
+                    path,
+                    parent: Some("ui".into()),
+                });
+            }
+        }
+        out
+    }
+
+    /// Whether a file name is code in this stack.
+    pub fn is_code(&self, file_name: &str) -> bool {
+        match self.code.strip_prefix('*') {
+            Some("") => true,
+            Some(suffix) => file_name.ends_with(suffix),
+            None => file_name == self.code,
+        }
+    }
+}
+
+/// The names in backticks, joined as a sentence: "`a`, `b` and `c`".
+fn listed(names: &[String]) -> String {
+    let names: Vec<String> = names.iter().map(|n| format!("`{n}`")).collect();
+    match names.split_last() {
+        None => String::new(),
+        Some((last, [])) => last.clone(),
+        Some((last, rest)) => format!("{} and {last}", rest.join(", ")),
+    }
+}
+
+fn layer_doc(layer: &Entry) -> String {
+    let imports = if layer.imports.is_empty() {
+        "Imports no other layer.".to_string()
+    } else {
+        format!("May import {}.", listed(&layer.imports))
+    };
+    format!("{}\n\n{imports}", layer.role.trim())
+}
+
+fn level_doc(level: &Entry, has_lower: bool) -> String {
+    let below = if has_lower {
+        "the levels below it, and "
+    } else {
+        ""
+    };
+    format!(
+        "{}\n\nMay import {below}{}.",
+        level.role.trim(),
+        listed(&level.imports)
+    )
+}
+
+/// The files of one place, from the root: `{name}` and `{doc}` filled in, each line of the documentation with the
+/// stack's prefix.
+fn render(files: &[File], at: &str, name: &str, prefix: &str, doc: &str) -> Vec<(String, String)> {
+    let doc: Vec<String> = doc
+        .lines()
+        .map(|line| {
+            if line.is_empty() {
+                prefix.trim_end().to_string()
+            } else {
+                format!("{prefix}{line}")
+            }
+        })
+        .collect();
+    let doc = doc.join("\n");
+    files
+        .iter()
+        .map(|file| {
+            (
+                format!("{at}/{}", file.path),
+                file.text.replace("{name}", name).replace("{doc}", &doc),
+            )
+        })
+        .collect()
+}
+
+/// What a project declares in `.config/docket.toml`.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Declaration {
+    pub stack: String,
+    #[serde(default)]
+    pub absent: Vec<String>,
+    #[serde(default)]
+    pub unchecked: Vec<String>,
+}
+
+/// The declaration, or why it cannot be read. `Ok(None)` when the file does not exist.
+pub fn declaration(root: &Path) -> io::Result<Option<Result<Declaration, String>>> {
+    let path = root.join(DECLARATION);
+    if !path.exists() {
+        return Ok(None);
+    }
+    let text = fs::read_to_string(&path)
+        .map_err(|e| io::Error::new(e.kind(), format!("{DECLARATION}: {e}")))?;
+    Ok(Some(
+        toml::from_str(&text).map_err(|e| e.message().to_string()),
+    ))
+}
+
+/// Every stack a declaration may name, `none` last.
+pub fn known_stacks() -> Vec<&'static str> {
+    STACKS
+        .iter()
+        .map(|(name, _)| *name)
+        .chain([RECORDS_ONLY])
+        .collect()
+}
+
+/// The declaration `docket init` writes for a stack: every field with what it means, so the project edits it rather
+/// than looking it up.
+pub fn declaration_text(stack: &str) -> String {
+    let head = "# What docket keeps in this project. Edit it, then run `docket create` to make what is missing.\n\
+                # `docket check` fails when the tree and this file differ, either way.\n";
+    let stacks = known_stacks().join(" | ");
+    if stack == RECORDS_ONLY {
+        return format!(
+            "{head}\n# {stacks}. \"none\": records only (docs/), no layers to make or check\n\
+             stack = \"{stack}\"\n"
+        );
+    }
+    format!(
+        "{head}\n# {stacks}\nstack = \"{stack}\"\n\n\
+         # Layers this project does not have, such as \"ui\" or \"ui.templates\". Delete the directory too\n\
+         absent = []\n\n\
+         # Paths outside the layers that docket does not look into, such as \"scripts\" (helper scripts, generated or\n\
+         # vendored code). A path that holds a layer, or does not exist, fails\n\
+         unchecked = []\n"
+    )
+}
+
+/// A declaration together with the layout it names. `Err` is every reason the two do not fit, for the check.
+pub struct Declared {
+    pub declaration: Declaration,
+    /// `None` for a repository that keeps records only (`stack = "none"`)
+    pub layout: Option<Layout>,
+    pub places: Vec<Place>,
+}
+
+impl Declared {
+    pub fn new(declaration: Declaration) -> Result<Self, Vec<String>> {
+        if declaration.stack == RECORDS_ONLY {
+            let mut found = Vec::new();
+            for (field, values) in [
+                ("absent", &declaration.absent),
+                ("unchecked", &declaration.unchecked),
+            ] {
+                if !values.is_empty() {
+                    found.push(format!(
+                        "{DECLARATION}: stack = \"none\" has no layers, so {field} must be empty: {values:?}"
+                    ));
+                }
+            }
+            if !found.is_empty() {
+                return Err(found);
+            }
+            return Ok(Declared {
+                declaration,
+                layout: None,
+                places: Vec::new(),
+            });
+        }
+        let Some(layout) = layout(&declaration.stack) else {
+            return Err(vec![format!(
+                "{DECLARATION}: unknown stack {:?} (known: {})",
+                declaration.stack,
+                known_stacks().join(", ")
+            )]);
+        };
+        let places = layout.places(&table());
+        let unknown: Vec<String> = declaration
+            .absent
+            .iter()
+            .filter(|name| !places.iter().any(|p| &p.name == *name))
+            .map(|name| {
+                format!(
+                    "{DECLARATION}: absent names {name:?}, which the {} layout does not have",
+                    declaration.stack
+                )
+            })
+            .collect();
+        if !unknown.is_empty() {
+            return Err(unknown);
+        }
+        Ok(Declared {
+            declaration,
+            layout: Some(layout),
+            places,
+        })
+    }
+
+    /// Declared absent itself, or inside a layer declared absent.
+    pub fn is_absent(&self, place: &Place) -> bool {
+        let absent = &self.declaration.absent;
+        absent.contains(&place.name) || place.parent.as_ref().is_some_and(|p| absent.contains(p))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_definition_reads() {
+        let table = table();
+        assert!(table.layers.len() >= 5 && table.levels.len() == 5);
+        let names: Vec<&str> = table
+            .layers
+            .iter()
+            .chain(&table.levels)
+            .map(|e| e.name.as_str())
+            .collect();
+        for entry in table.layers.iter().chain(&table.levels) {
+            assert!(!entry.role.trim().is_empty(), "{} has no role", entry.name);
+            for import in &entry.imports {
+                assert!(
+                    names.contains(&import.as_str()),
+                    "{} imports unknown {import}",
+                    entry.name
+                );
+            }
+        }
+        for (stack, _) in STACKS {
+            let layout = layout(stack).unwrap();
+            for name in layout.without.iter().chain(layout.layers.keys()) {
+                assert!(
+                    table.layers.iter().any(|l| &l.name == name),
+                    "{stack}: no layer {name}"
+                );
+            }
+            let places = layout.places(&table);
+            assert!(places.len() >= 5, "{stack} makes {} places", places.len());
+            for place in &places {
+                assert!(
+                    !place.files.is_empty(),
+                    "{stack}: {} has no file",
+                    place.name
+                );
+                for (path, text) in &place.files {
+                    assert!(path.starts_with(&format!("{}/", place.path)), "{path}");
+                    assert!(
+                        !text.contains("{name}") && !text.contains("{doc}"),
+                        "{stack}: {path} has a placeholder left: {text}"
+                    );
+                    // A crate that cannot import `ui` is not told it may
+                    assert!(
+                        !layout
+                            .without
+                            .iter()
+                            .any(|w| text.contains(&format!("`{w}`"))),
+                        "{stack}: {path} names a layer the stack does not have: {text}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_layer_is_documented_as_its_stack_writes_it() {
+        let table = table();
+        let python = layout("python").unwrap().places(&table);
+        let utils = python.iter().find(|p| p.name == "utils").unwrap();
+        assert_eq!(utils.files[0].0, "utils/__init__.py");
+        assert!(utils.files[0].1.starts_with("\"\"\"General-purpose parts"));
+        assert!(
+            utils.files[0]
+                .1
+                .ends_with("Imports no other layer.\n\"\"\"\n")
+        );
+
+        let rust = layout("rust").unwrap().places(&table);
+        assert!(!rust.iter().any(|p| p.name.starts_with("ui")));
+        let handler = rust.iter().find(|p| p.name == "handler").unwrap();
+        let paths: Vec<&str> = handler.files.iter().map(|(p, _)| p.as_str()).collect();
+        assert_eq!(
+            paths,
+            ["crates/handler/Cargo.toml", "crates/handler/src/main.rs"]
+        );
+        let main = &handler.files[1].1;
+        assert!(main.starts_with("//! Entry points") && main.contains("\n//!\n"));
+        assert!(main.ends_with("fn main() {}\n"));
+
+        let typescript = layout("typescript").unwrap().places(&table);
+        let atoms = typescript.iter().find(|p| p.name == "ui.atoms").unwrap();
+        assert_eq!(atoms.path, "src/ui/atoms");
+        assert_eq!(atoms.parent.as_deref(), Some("ui"));
+        assert!(atoms.files[0].1.contains("\n * May import `utils`.\n */\n"));
+        let pages = typescript.iter().find(|p| p.name == "ui.pages").unwrap();
+        assert!(
+            pages.files[0]
+                .1
+                .contains("May import the levels below it, and `application`")
+        );
+    }
+
+    #[test]
+    fn the_declaration_init_writes_reads_back() {
+        for stack in known_stacks() {
+            let declaration: Declaration =
+                toml::from_str(&declaration_text(stack)).unwrap_or_else(|e| panic!("{stack}: {e}"));
+            assert_eq!(declaration.stack, stack);
+            assert!(Declared::new(declaration).is_ok(), "{stack}");
+        }
+    }
+
+    #[test]
+    fn code_is_matched_by_name() {
+        let mut layout = layout("python").unwrap();
+        assert!(layout.is_code("a.py") && !layout.is_code("a.pyi") && !layout.is_code("README.md"));
+        layout.code = "*".into();
+        assert!(layout.is_code("anything"));
+        layout.code = "Cargo.toml".into();
+        assert!(layout.is_code("Cargo.toml") && !layout.is_code("Cargo.lock"));
+    }
+}

@@ -23,6 +23,8 @@ pub const GENERATED: &str = "<!-- Generated from the frontmatter by `docket inde
 /// The backlog rules. docket writes them like an index file, so the rules a project reads are the rules its docket
 /// checks
 pub const RULES: &str = include_str!("../records/rules.md");
+/// The log as `docket create` makes it. From then on it is the project's
+pub const LOG: &str = include_str!("../records/log.md");
 /// The bundle-root index links to these, in this order
 const ROOT_ENTRIES: [(&str, &str, &str); 4] = [
     ("Backlog", "backlog/", "Open problems and postponed work."),

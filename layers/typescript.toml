@@ -1,0 +1,29 @@
+# Where the layers live in a TypeScript project (React for `ui`). What the layers are is in table.toml.
+#
+# A layer is a directory in `src/` with an `index.ts`, with the role as its doc comment. A level of `ui` is a directory
+# inside it.
+
+# Code is any file in `src/`, outside `.gitignore` and hidden directories. Code outside every layer fails, unless the
+# project lists it in `unchecked`. Nothing outside `src/` is looked at.
+scope = "src"
+code = "*"
+not_layers = []
+doc_prefix = " * "
+
+[layer]
+path = "src/{name}"
+files = [{ path = "index.ts", text = '''
+/**
+{doc}
+ */
+export {};
+''' }]
+
+[level]
+path = "src/ui/{name}"
+files = [{ path = "index.ts", text = '''
+/**
+{doc}
+ */
+export {};
+''' }]

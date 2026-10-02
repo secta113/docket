@@ -25,6 +25,14 @@ fn repo() -> tempfile::TempDir {
     root
 }
 
+/// A repository with only `.config/docket.toml`.
+fn declared(declaration: &str) -> tempfile::TempDir {
+    let root = tempfile::tempdir().unwrap();
+    fs::create_dir_all(root.path().join(".config")).unwrap();
+    fs::write(root.path().join(".config/docket.toml"), declaration).unwrap();
+    root
+}
+
 fn root_arg(root: &Path) -> String {
     root.to_string_lossy().into_owned()
 }
@@ -36,19 +44,16 @@ fn a_missing_root_fails() {
     assert!(String::from_utf8_lossy(&out.stderr).contains("not a directory"));
 }
 
-/// A repository that keeps every rule: the bundle, a log, and the index files written by `docket index`.
+/// A repository that keeps every rule: what `docket create` makes for a Python project without `ui`, and a log entry.
 fn clean_repo() -> tempfile::TempDir {
-    let root = repo();
+    let root = declared("stack = \"python\"\nabsent = [\"ui\"]\n");
+    let out = run(&["--root", &root_arg(root.path()), "create"]);
+    assert!(out.status.success(), "{}", stdout(&out));
     fs::write(
         root.path().join("docs/log.md"),
         "# Log\n\n## 2026-10-02\n\n* Something\n",
     )
     .unwrap();
-    assert!(
-        run(&["--root", &root_arg(root.path()), "index"])
-            .status
-            .success()
-    );
     root
 }
 
@@ -57,7 +62,7 @@ fn a_clean_repository_passes() {
     let root = clean_repo();
     let out = run(&["--root", &root_arg(root.path()), "check"]);
     assert!(out.status.success(), "{}", stdout(&out));
-    assert!(stdout(&out).contains("every record keeps the rules"));
+    assert!(stdout(&out).contains("the layers and every record keep the rules"));
 }
 
 #[test]
@@ -242,4 +247,414 @@ fn index_fails_without_a_spec_directory() {
     let out = run(&["--root", &root_arg(root.path()), "index"]);
     assert!(!out.status.success());
     assert!(String::from_utf8_lossy(&out.stderr).contains("done"));
+}
+
+/// Every file under `root`, from the root with `/`, and its text.
+fn tree(root: &Path) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    let mut dirs = vec![root.to_path_buf()];
+    while let Some(dir) = dirs.pop() {
+        for entry in fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                dirs.push(path);
+            } else {
+                let name = path.strip_prefix(root).unwrap().to_string_lossy();
+                out.push((name.replace('\\', "/"), fs::read_to_string(&path).unwrap()));
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
+#[test]
+fn create_makes_each_stack_once_and_check_passes_on_it() {
+    // (stack, files that must be made, paths that must not)
+    let stacks: [(&str, &[&str], &[&str]); 3] = [
+        (
+            "python",
+            &[
+                "handler/__init__.py",
+                "ui/atoms/__init__.py",
+                "utils/__init__.py",
+            ],
+            &[],
+        ),
+        (
+            "typescript",
+            &[
+                "src/handler/index.ts",
+                "src/ui/pages/index.ts",
+                "src/domain/index.ts",
+            ],
+            &[],
+        ),
+        (
+            "rust",
+            &[
+                "crates/handler/src/main.rs",
+                "crates/domain/Cargo.toml",
+                "crates/domain/src/lib.rs",
+            ],
+            &["crates/ui"],
+        ),
+    ];
+    for (stack, made, not_made) in stacks {
+        let root = declared(&format!("stack = \"{stack}\"\n"));
+        let arg = root_arg(root.path());
+        let first = run(&["--root", &arg, "create"]);
+        assert!(first.status.success(), "{stack}: {}", stdout(&first));
+        for path in made
+            .iter()
+            .chain(&["docs/log.md", "docs/backlog/rules.md", "docs/index.md"])
+        {
+            assert!(
+                root.path().join(path).is_file(),
+                "{stack}: {path} was not made"
+            );
+            assert!(
+                stdout(&first).contains(&format!("wrote {path}")),
+                "{stack}: {}",
+                stdout(&first)
+            );
+        }
+        for path in not_made {
+            assert!(!root.path().join(path).exists(), "{stack}: {path} was made");
+        }
+        let before = tree(root.path());
+        let second = run(&["--root", &arg, "create"]);
+        assert!(second.status.success());
+        assert!(
+            stdout(&second).contains("nothing to make"),
+            "{stack}: {}",
+            stdout(&second)
+        );
+        assert_eq!(
+            tree(root.path()),
+            before,
+            "{stack}: the second run changed the tree"
+        );
+        let check = run(&["--root", &arg, "check"]);
+        assert!(check.status.success(), "{stack}: {}", stdout(&check));
+    }
+}
+
+#[test]
+fn create_respects_absent_and_leaves_what_it_does_not_own() {
+    let root = declared("stack = \"python\"\nabsent = [\"ui.templates\", \"infrastructure\"]\n");
+    let arg = root_arg(root.path());
+    // Files of the project: a layer it already has, and a log with entries
+    fs::create_dir_all(root.path().join("domain")).unwrap();
+    fs::write(root.path().join("domain/model.py"), "X = 1\n").unwrap();
+    fs::create_dir_all(root.path().join("docs")).unwrap();
+    let log = "# Log\n\n## 2026-10-02\n\n* Mine\n";
+    fs::write(root.path().join("docs/log.md"), log).unwrap();
+    let out = run(&["--root", &arg, "create"]);
+    assert!(out.status.success(), "{}", stdout(&out));
+    assert!(root.path().join("ui/pages/__init__.py").is_file());
+    assert!(!root.path().join("ui/templates").exists());
+    assert!(!root.path().join("infrastructure").exists());
+    // A present layer is the project's: not even its missing __init__.py is written
+    assert!(!root.path().join("domain/__init__.py").exists());
+    assert_eq!(
+        fs::read_to_string(root.path().join("domain/model.py")).unwrap(),
+        "X = 1\n"
+    );
+    assert_eq!(
+        fs::read_to_string(root.path().join("docs/log.md")).unwrap(),
+        log
+    );
+    let check = run(&["--root", &arg, "check"]);
+    assert!(check.status.success(), "{}", stdout(&check));
+}
+
+#[test]
+fn create_fails_without_a_declaration_it_can_read() {
+    let cases = [
+        (None, "docket init --stack"),
+        (Some("stack = \"cobol\"\n"), "unknown stack"),
+        (
+            Some("stack = \"rust\"\nabsent = [\"ui\"]\n"),
+            "does not have",
+        ),
+        (Some("stack = \"python\"\nabsnet = []\n"), "unknown field"),
+    ];
+    for (declaration, said) in cases {
+        let root = match declaration {
+            Some(text) => declared(text),
+            None => tempfile::tempdir().unwrap(),
+        };
+        let out = run(&["--root", &root_arg(root.path()), "create"]);
+        assert_eq!(out.status.code(), Some(2), "{said}");
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(stderr.contains(said), "{said}: {stderr}");
+        assert!(
+            !root.path().join("docs").exists(),
+            "{said}: made docs/ all the same"
+        );
+    }
+}
+
+type Plant = Box<dyn Fn(&Path)>;
+
+fn declare(root: &Path, text: &str) {
+    fs::write(root.join(".config/docket.toml"), text).unwrap();
+}
+
+fn plant_file(root: &Path, path: &str) {
+    let full = root.join(path);
+    fs::create_dir_all(full.parent().unwrap()).unwrap();
+    fs::write(full, "x = 1\n").unwrap();
+}
+
+#[test]
+fn each_difference_from_the_declaration_fails() {
+    // Each case breaks one rule of a clean repository: (what the message says, how to break it)
+    let cases: Vec<(&str, Plant)> = vec![
+        (
+            "domain is missing",
+            Box::new(|r| fs::remove_dir_all(r.join("domain")).unwrap()),
+        ),
+        (
+            "ui is declared absent, but ui/ exists",
+            Box::new(|r| plant_file(r, "ui/__init__.py")),
+        ),
+        (
+            "code outside the layers: scripts",
+            Box::new(|r| plant_file(r, "scripts/tool.py")),
+        ),
+        (
+            "code outside the layers: main.py",
+            Box::new(|r| plant_file(r, "main.py")),
+        ),
+        (
+            "missing: .config/docket.toml",
+            Box::new(|r| fs::remove_file(r.join(".config/docket.toml")).unwrap()),
+        ),
+        (
+            "unknown stack",
+            Box::new(|r| declare(r, "stack = \"cobol\"\n")),
+        ),
+        (
+            "does not have",
+            Box::new(|r| declare(r, "stack = \"python\"\nabsent = [\"ui\", \"service\"]\n")),
+        ),
+        (
+            "unknown field",
+            Box::new(|r| declare(r, "stack = \"python\"\nabsent = [\"ui\"]\nextra = 1\n")),
+        ),
+        // A layer cannot be switched off by listing it, or a directory holding it
+        (
+            "which holds or sits in the layer domain",
+            Box::new(|r| {
+                declare(
+                    r,
+                    "stack = \"python\"\nabsent = [\"ui\"]\nunchecked = [\"domain\"]\n",
+                )
+            }),
+        ),
+        // Written another way, a path would match nothing and switch nothing off
+        (
+            "write a path from the root",
+            Box::new(|r| {
+                plant_file(r, "scripts/tool.py");
+                declare(
+                    r,
+                    "stack = \"python\"\nabsent = [\"ui\"]\nunchecked = [\"./scripts\"]\n",
+                );
+            }),
+        ),
+        (
+            "unchecked lists scripts, which does not exist",
+            Box::new(|r| {
+                declare(
+                    r,
+                    "stack = \"python\"\nabsent = [\"ui\"]\nunchecked = [\"scripts\"]\n",
+                )
+            }),
+        ),
+        // The floor: with every layer declared absent, nothing would be checked
+        (
+            "no layer is present",
+            Box::new(|r| {
+                for layer in [
+                    "handler",
+                    "application",
+                    "infrastructure",
+                    "domain",
+                    "utils",
+                ] {
+                    fs::remove_dir_all(r.join(layer)).unwrap();
+                }
+                declare(
+                    r,
+                    "stack = \"python\"\nabsent = [\"handler\", \"ui\", \"application\", \"infrastructure\", \
+                     \"domain\", \"utils\"]\n",
+                );
+            }),
+        ),
+    ];
+    for (said, plant) in cases {
+        let root = clean_repo();
+        plant(root.path());
+        let out = run(&["--root", &root_arg(root.path()), "check"]);
+        assert_eq!(out.status.code(), Some(1), "{said}: {}", stdout(&out));
+        assert!(
+            stdout(&out).contains("the tree matches .config/docket.toml:"),
+            "{said}: {}",
+            stdout(&out)
+        );
+        assert!(stdout(&out).contains(said), "{said}: {}", stdout(&out));
+    }
+}
+
+#[test]
+fn code_that_is_not_the_projects_is_not_looked_at() {
+    let root = clean_repo();
+    let r = root.path();
+    // Ignored by git, hidden, paths the stack says are not layers, a path the project lists, and a file that is not
+    // code
+    fs::write(r.join(".gitignore"), "venv/\n").unwrap();
+    for path in [
+        "venv/Lib/site-packages/pkg/__init__.py",
+        ".tox/x.py",
+        "tests/test_x.py",
+        "ci.py",
+        "scripts/tool.py",
+        "notes/readme.md",
+    ] {
+        plant_file(r, path);
+    }
+    declare(
+        r,
+        "stack = \"python\"\nabsent = [\"ui\"]\nunchecked = [\"scripts/\"]\n",
+    );
+    let out = run(&["--root", &root_arg(r), "check"]);
+    assert!(out.status.success(), "{}", stdout(&out));
+}
+
+#[test]
+fn only_the_projects_own_gitignore_hides_code() {
+    // A .gitignore above the root belongs to another repository, or to no repository at all
+    let outer = tempfile::tempdir().unwrap();
+    fs::write(outer.path().join(".gitignore"), "scripts/\n").unwrap();
+    let r = outer.path().join("project");
+    fs::create_dir_all(r.join(".config")).unwrap();
+    declare(&r, "stack = \"typescript\"\nabsent = [\"ui\"]\n");
+    assert!(run(&["--root", &root_arg(&r), "create"]).status.success());
+    plant_file(&r, "src/scripts/tool.ts");
+    let out = run(&["--root", &root_arg(&r), "check"]);
+    assert_eq!(out.status.code(), Some(1), "{}", stdout(&out));
+    assert!(
+        stdout(&out).contains("code outside the layers: src/scripts"),
+        "{}",
+        stdout(&out)
+    );
+    // The root's own .gitignore applies inside the scope
+    fs::write(r.join(".gitignore"), "src/scripts/\n").unwrap();
+    let out = run(&["--root", &root_arg(&r), "check"]);
+    assert!(out.status.success(), "{}", stdout(&out));
+}
+
+#[test]
+fn init_writes_a_declaration_that_create_reads() {
+    for stack in ["python", "typescript", "rust", "none"] {
+        let root = tempfile::tempdir().unwrap();
+        let arg = root_arg(root.path());
+        let out = run(&["--root", &arg, "init", "--stack", stack]);
+        assert!(
+            out.status.success(),
+            "{stack}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert!(
+            stdout(&out).contains("wrote .config/docket.toml"),
+            "{stack}: {}",
+            stdout(&out)
+        );
+        let written = fs::read_to_string(root.path().join(".config/docket.toml")).unwrap();
+        assert!(
+            written.contains(&format!("stack = \"{stack}\"")),
+            "{written}"
+        );
+        // Only the declaration: nothing is made before the project declares what it does not have
+        assert_eq!(
+            tree(root.path()).len(),
+            1,
+            "{stack}: {:?}",
+            tree(root.path())
+        );
+        let out = run(&["--root", &arg, "create"]);
+        assert!(out.status.success(), "{stack}: {}", stdout(&out));
+        let out = run(&["--root", &arg, "check"]);
+        assert!(out.status.success(), "{stack}: {}", stdout(&out));
+        // The declaration is the project's: a second init leaves it as it is
+        declare(root.path(), &format!("{written}# edited\n"));
+        let again = run(&["--root", &arg, "init", "--stack", stack]);
+        assert_eq!(again.status.code(), Some(2), "{stack}");
+        assert!(String::from_utf8_lossy(&again.stderr).contains("never overwrites"));
+        let kept = fs::read_to_string(root.path().join(".config/docket.toml")).unwrap();
+        assert!(kept.ends_with("# edited\n"), "{stack}: {kept}");
+    }
+}
+
+#[test]
+fn init_needs_a_known_stack() {
+    let root = tempfile::tempdir().unwrap();
+    let arg = root_arg(root.path());
+    let out = run(&["--root", &arg, "init", "--stack", "cobol"]);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("known: python, typescript, rust, none"));
+    let out = run(&["--root", &arg, "init"]);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(tree(root.path()).is_empty(), "{:?}", tree(root.path()));
+}
+
+#[test]
+fn a_repository_of_records_only_makes_and_checks_only_docs() {
+    let root = declared("stack = \"none\"\n");
+    let arg = root_arg(root.path());
+    let out = run(&["--root", &arg, "create"]);
+    assert!(out.status.success(), "{}", stdout(&out));
+    let made: Vec<String> = tree(root.path())
+        .into_iter()
+        .map(|(path, _)| path)
+        .collect();
+    assert!(
+        made.iter()
+            .all(|path| path.starts_with("docs/") || path.starts_with(".config/")),
+        "{made:?}"
+    );
+    // Code anywhere is not looked at, and the output says the layers were skipped
+    plant_file(root.path(), "main.py");
+    let out = run(&["--root", &arg, "check"]);
+    assert!(out.status.success(), "{}", stdout(&out));
+    assert!(
+        stdout(&out).contains("the layers are not checked"),
+        "{}",
+        stdout(&out)
+    );
+    assert!(
+        stdout(&out).contains("every record keeps the rules"),
+        "{}",
+        stdout(&out)
+    );
+    // The records are still checked
+    fs::write(
+        root.path().join("docs/backlog/index.md"),
+        "edited by hand\n",
+    )
+    .unwrap();
+    let out = run(&["--root", &arg, "check"]);
+    assert_eq!(out.status.code(), Some(1), "{}", stdout(&out));
+    // No layers means nothing to declare absent or unchecked
+    declare(root.path(), "stack = \"none\"\nabsent = [\"ui\"]\n");
+    let out = run(&["--root", &arg, "check"]);
+    assert_eq!(out.status.code(), Some(1));
+    assert!(
+        stdout(&out).contains("absent must be empty"),
+        "{}",
+        stdout(&out)
+    );
 }

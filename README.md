@@ -24,7 +24,8 @@ docket keeps a project's structure from drifting while LLMs and people change it
 - **Whoever picks up the work next reads one index, not every file.** The index files are generated, never written by
   hand.
 
-docket checks the records today. Making and checking the layers is not built yet.
+docket makes the layer directories and checks that they are where the project declares them. The direction of
+imports is still checked by each stack's own tool (import-linter for Python), until it moves into docket.
 
 The records live in `docs/`, which is a bundle in [OKF 0.2](https://github.com/GoogleCloudPlatform/open-knowledge-format)
 (its `SPEC.md` as of commit `ad30107`): every document has YAML frontmatter with a `type`, `index.md` and `log.md` are
@@ -44,11 +45,23 @@ cargo build --release   # the binary is target/release/docket (docket.exe on Win
 ## Usage
 
 ```sh
-docket --root <repository> check   # check the records; exits 1 when a rule is broken
+docket --root <repository> init --stack python  # write .config/docket.toml, once
+docket --root <repository> create  # make the layers .config/docket.toml declares, and the records skeleton
+docket --root <repository> check   # check the layers and the records; exits 1 when a rule is broken
 docket --root <repository> index   # write every generated file in docs/ (the index files and the backlog rules)
 ```
 
-`--root` defaults to the current directory. The records are read from `<repository>/docs`.
+`--root` defaults to the current directory. The declaration is read from `<repository>/.config/docket.toml`, and the
+records from `<repository>/docs`.
+
+Start a project with `docket init --stack <stack>` (`python`, `typescript`, `rust`, or `none` for a repository
+that keeps records only). It writes only the declaration, so you declare in `absent` the layers you do not want before
+anything is made, and it never overwrites a declaration that exists. Then run `docket create`.
+
+Run `docket create` when a project starts, and again after you change `.config/docket.toml` on purpose. It makes only
+what is missing: a layer that is neither present nor declared absent, `docs/log.md` when there is none, and the files
+docket generates. It never overwrites a file it does not generate, and never moves or deletes one. Nothing runs it on
+its own, so a layer removed by mistake fails `docket check` instead of coming back.
 
 The index files only help if your agent reads them. Point it at them in your `AGENTS.md` (or whatever file your agent
 reads first), for example:
@@ -58,6 +71,35 @@ reads first), for example:
   that concern the work.** Read `docs/done/index.md` and `docs/log.md` when you need to know why something was
   decided.
 ```
+
+## The layers
+
+A project declares its structure in `.config/docket.toml`, the directory tools share for their configuration.
+`docket init` writes it, and from then on it is the project's file. pip installs only the docket binary: the layer
+definitions are built into it, and the declaration is never shipped with it.
+
+```toml
+stack = "python"         # python | typescript | rust | none
+absent = ["ui"]          # layers this project does not have
+unchecked = ["scripts"]  # paths outside the layers that docket does not look into
+```
+
+What the layers are (`handler`, `ui`, `application`, `infrastructure`, `domain`, `utils`, and the atomic levels of
+`ui`: `pages`, `templates`, `organisms`, `molecules`, `atoms`) is written once, in `layers/table.toml`. Where they live
+is written once per stack:
+
+| Stack | A layer is | A `ui` level is | Code docket looks at |
+|---|---|---|---|
+| `python` | `<layer>/__init__.py`, the role as its docstring | `ui/<level>/__init__.py` | `.py` files anywhere, except `tests/` and `ci.py` |
+| `typescript` | `src/<layer>/index.ts`, the role as a doc comment | `src/ui/<level>/index.ts` (React) | every file in `src/` |
+| `rust` | a crate, `crates/<layer>/` (`handler` a binary), the role as `//!` | none: Rust has no `ui` yet | every crate in `crates/` |
+
+`stack = "none"` declares a repository that keeps records only: `docket create` makes only `docs/`, and `docket
+check` checks only the records and prints that it did not check the layers. It is a line in the declaration, not a
+flag, so the structure check is never switched off where the declaration still declares layers.
+
+A level of `ui` is declared absent by its dotted name (`absent = ["ui.templates"]`). Files `.gitignore` excludes and
+hidden files are not looked at, so a virtual environment or a build directory is not code.
 
 ## The records
 
@@ -98,6 +140,12 @@ stale_after: 2027-01-01T00:00:00+09:00   # optional: when to measure the state a
 ```
 
 ## What `docket check` checks
+
+- **The tree matches `.config/docket.toml`, either way:** the declaration exists and names a known stack, and only
+  layers that stack has in `absent` (a misspelled field fails). Every layer of the stack is present or declared
+  absent, and no layer declared absent is present. No code sits outside the layers, the stack's own paths (`tests/`)
+  and `unchecked`. A path in `unchecked` exists and neither holds nor sits in a layer, so a layer cannot be switched
+  off by listing it. At least one layer is present: with every layer declared absent, nothing would be checked.
 
 - **The bundle is there:** `docs/`, `docs/index.md`, `docs/backlog/`, `docs/backlog/rules.md`, `docs/specs/` and
   `docs/done/` exist. Without them every other check would pass with nothing checked.

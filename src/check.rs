@@ -1,5 +1,7 @@
-//! `docket check`: every rule of the records, run against one repository.
+//! `docket check`: every rule of the structure and the records, run against one repository.
 //!
+//! - **The tree matches `.config/docket.toml`**: the layers of the stack are present or declared absent, and no code
+//!   sits outside them (`structure.rs`).
 //! - **The backlog works as a backlog**: every document keeps the format, every link in `# Details` resolves, and every
 //!   backlog item the log points to exists.
 //! - **`docs/` is one OKF bundle**: every document is a known type in the directory for its type, a spec sits in the
@@ -56,8 +58,34 @@ pub struct Finding {
     pub detail: String,
 }
 
+/// What `docket check` found.
+#[derive(Debug, Default)]
+pub struct Report {
+    pub findings: Vec<Finding>,
+    /// Checks that did not run, and why
+    pub skipped: Vec<String>,
+}
+
 /// Every broken rule in the repository at `root`. An error is a file that could not be read at all.
-pub fn check(root: &Path) -> io::Result<Vec<Finding>> {
+pub fn check(root: &Path) -> io::Result<Report> {
+    let structure = crate::structure::problems(root)?;
+    let mut findings: Vec<Finding> = structure
+        .found
+        .into_iter()
+        .map(|detail| Finding {
+            check: "the tree matches .config/docket.toml",
+            detail,
+        })
+        .collect();
+    findings.extend(records(root)?);
+    Ok(Report {
+        findings,
+        skipped: structure.skipped.into_iter().collect(),
+    })
+}
+
+/// Every broken rule of the records.
+fn records(root: &Path) -> io::Result<Vec<Finding>> {
     let bundle = Bundle::new(root);
     let mut found = Vec::new();
     let mut add = |check: &'static str, details: Vec<String>| {

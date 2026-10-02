@@ -8,7 +8,8 @@ and why, is in `README.md`.
 | Path | Content |
 |---|---|
 | `src/` | The tool, one module per concern (below) |
-| `records/` | The records skeleton, built into the binary: `rules.md` (the backlog rules docket writes into every project) |
+| `layers/` | The layer definitions, built into the binary: `table.toml` (what the layers are, in every stack) and one layout per stack (`python.toml`, `typescript.toml`, `rust.toml`: where each layer lives and the files that make it) |
+| `records/` | The records skeleton, built into the binary: `rules.md` (the backlog rules docket writes into every project) and `log.md` (the log `docket create` starts) |
 | `tests/` | Tests that run the built binary as a user runs it (`cli.rs`) |
 | `xtask/` | The CI entry point (`cargo xtask ci`) |
 | `.cargo/` | The `cargo xtask` alias |
@@ -26,9 +27,13 @@ Also tracked, as in most repositories: `.gitattributes`, `.gitignore`, `Cargo.lo
 
 | Module of `src/` | Content |
 |---|---|
-| `main.rs` | The command line: `docket check` and `docket index` |
+| `main.rs` | The command line: `docket init`, `docket create`, `docket check` and `docket index` |
 | `lib.rs` | The library the command line calls |
 | `check.rs` | Every rule `docket check` runs, each with its floor |
+| `layers.rs` | Reading the layer definitions in `layers/` and a project's `.config/docket.toml` |
+| `structure.rs` | The structure check: the tree agrees with `.config/docket.toml`, either way |
+| `init.rs` | `docket init`: writing a project's declaration, once |
+| `create.rs` | `docket create`: making the layers and the records skeleton a project lacks |
 | `bundle.rs` | Reading `docs/` as one OKF bundle, and the files docket generates in it (the index files and the backlog rules) |
 | `schema.rs` | The frontmatter of each document type |
 | `frontmatter.rs` | Splitting a document into frontmatter and the sections of its body |
@@ -38,10 +43,14 @@ Also tracked, as in most repositories: `.gitattributes`, `.gitignore`, `Cargo.lo
 ## How this repository differs from what docket keeps
 
 - **No `docs/` here.** docket's own backlog, specs and log are kept outside this repository.
-- **No layers.** The modules are split by concern, not into `handler`, `application`, `domain` and the other layers
-  that docket is meant to keep in the projects that use it (README).
+- **No layers, and no `.config/docket.toml`.** The modules are split by concern, not into `handler`, `application`,
+  `domain` and the other layers that docket keeps in the projects that use it (README).
 
 ## Rules for every change
+
+- **A layer or a stack changes in `layers/`, not in code.** The table says what the layers are once; a layout says
+  only where they live in one stack. The tests read every definition, so a layout that names a layer the table lacks
+  fails.
 
 - **Run CI with `cargo xtask ci`, on the host or in the container (`docker compose run --rm dev cargo xtask ci`).** The
   container is the Linux of CI and needs only Docker. On Windows, the host needs Visual Studio's C++ tools and the

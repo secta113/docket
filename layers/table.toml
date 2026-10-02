@@ -1,0 +1,101 @@
+# The layer table: what the layers are, the same in every stack. Where a layer lives in a project is in the layout of
+# its stack (<stack>.toml next to this file).
+#
+# `imports` lists the layers a layer may import, besides itself. The generated documentation of each layer says it
+# after the role, so the two are written once. A role is written for every stack: a port is "an interface", which a
+# stack writes as a Protocol, an interface or a trait.
+#
+# Order matters: `docket init` makes the layers in this order, and the documentation lists the imports in it.
+
+[[layer]]
+name = "handler"
+imports = ["ui", "application", "infrastructure", "domain", "utils"]
+role = """
+Entry points from outside: CLI, HTTP, events, jobs.
+
+This is the composition root: it builds the real implementations from `infrastructure`, passes them to the use
+cases in `application` and calls them."""
+
+[[layer]]
+name = "ui"
+imports = ["application", "domain", "utils"]
+role = """
+Framework-specific presentation and interaction: buttons, views, screen parts. `handler` registers them.
+
+Does not import `infrastructure`. Organized by atomic design: `pages` > `templates` > `organisms` >
+`molecules` > `atoms`; a level may import the levels below it, and only `pages` import `application`. The UI
+is responsible for presentation, not for features: split by level first, and by feature only inside a level."""
+
+[[layer]]
+name = "application"
+imports = ["domain", "utils"]
+role = """
+Use cases. Each one carries one operation from start to finish.
+
+Does not import `infrastructure`. When a use case needs something external, it takes a port (an interface
+defined in `domain`) as an argument; `handler` builds the real implementation and passes it in. Tests pass a
+fake."""
+
+[[layer]]
+name = "infrastructure"
+imports = ["domain", "utils"]
+role = """
+Connections to the outside: databases, API clients, files, queues. May also import external libraries.
+
+Implements the ports (interfaces) defined in `domain`."""
+
+[[layer]]
+name = "domain"
+imports = ["utils"]
+role = """
+The concepts and rules of the business: types, calculations and decisions. No I/O.
+
+Ports (interfaces to external dependencies) are defined here too. If they were in `application`, the
+`infrastructure` code that implements them would import a layer above it. Define a port only when
+`application` needs it, with only the methods `application` calls."""
+
+[[layer]]
+name = "utils"
+imports = []
+role = """
+General-purpose parts that know no project concept.
+
+A part that can be named only by referring to where it is used, or that knows a project concept, belongs in
+`domain`."""
+
+# The atomic levels of `ui`, top first. A level may import the levels below it, and the layers in its `imports`.
+[[level]]
+name = "pages"
+imports = ["application", "domain", "utils"]
+role = """
+One screen each. The only part of `ui` that calls `application`; `handler` builds the use cases and passes
+them in."""
+
+[[level]]
+name = "templates"
+imports = ["domain", "utils"]
+role = """
+Layout: how organisms are arranged. Does not call `application`; actions come in as callbacks."""
+
+[[level]]
+name = "organisms"
+imports = ["domain", "utils"]
+role = """
+Meaningful groups, such as a list or a control panel. They may know `domain` types but do not call
+`application`; actions come in as callbacks."""
+
+[[level]]
+name = "molecules"
+imports = ["utils"]
+role = """
+Combinations of atoms, such as an input with a button. Like atoms, they know no project concept: they import
+neither `domain` nor `application`."""
+
+[[level]]
+name = "atoms"
+imports = ["utils"]
+role = """
+The smallest parts: one button, one label. They know no project concept: they import neither `domain` nor
+`application`, and take only plain values.
+
+If a part cannot be named without referring to where it is used, it is not an atom."""
