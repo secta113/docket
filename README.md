@@ -173,6 +173,9 @@ stale_after: 2027-01-01T00:00:00+09:00   # optional: when to measure the state a
   absent, and no layer declared absent is present. No code sits outside the layers, the stack's own paths (`tests/`)
   and `unchecked`. A path in `unchecked` exists and neither holds nor sits in a layer, so a layer cannot be switched
   off by listing it. At least one layer is present: with every layer declared absent, nothing would be checked.
+  `ui` holds only its levels: code in `ui` beside them fails, apart from the layer's own file (`ui/__init__.py`).
+  What the whole UI shares goes in a level: a part that knows no project concept, visible or not (a design value, one
+  behaviour, a provider of a theme), is an atom.
 
 - **The bundle is there:** `docs/`, `docs/index.md`, `docs/backlog/`, `docs/backlog/rules.md`, `docs/specs/`,
   `docs/specs/rules.md` and `docs/done/` exist, and the declaration with its `areas` can be read. Without them every other check would pass

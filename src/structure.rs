@@ -4,6 +4,9 @@
 //! - No code sits outside the layers, except in the stack's paths that are not layers (`tests/`) and the paths the
 //!   project lists in `unchecked`. A path in `unchecked` exists and holds no layer, so a layer cannot be switched off by
 //!   listing it.
+//! - `ui` holds only its levels: code in it beside them fails, except the files the layout makes for `ui` itself. A
+//!   part there would have no place in the order of levels, and an import through it (`atoms → ui/helpers.py →
+//!   domain`) would pass every direct check of the direction.
 //!
 //! The floor: at least one layer is present. A project with every layer declared absent would check nothing. A
 //! repository that keeps records only declares `stack = "none"`, and the check says that it skipped the layers.
@@ -12,7 +15,7 @@ use std::collections::BTreeSet;
 use std::io;
 use std::path::Path;
 
-use crate::layers::{DECLARATION, Declared, Layout, MISSING, declaration};
+use crate::layers::{DECLARATION, Declared, Layout, MISSING, Place, declaration};
 use crate::source::{exactly, relative_path};
 
 /// Whether `path` is `prefix` or inside it. Both are from the root, with `/`.
@@ -136,6 +139,23 @@ pub fn problems(root: &Path) -> io::Result<Structure> {
             "code outside the layers: {outside} (move it into a layer, or list it in unchecked in {DECLARATION})"
         ));
     }
+    for layer in declared.places.iter().filter(|p| p.parent.is_none()) {
+        let levels: Vec<&Place> = declared
+            .places
+            .iter()
+            .filter(|p| p.parent.as_ref() == Some(&layer.name))
+            .collect();
+        if levels.is_empty() || declared.is_absent(layer) || !present(&layer.path) {
+            continue;
+        }
+        for beside in beside_levels(root, layout, layer, &levels)? {
+            found.push(format!(
+                "code in {} outside its levels: {beside} (move it into a level or a layer: {})",
+                layer.name,
+                where_ui_parts_go(&declared.places)
+            ));
+        }
+    }
     Ok(Structure {
         found,
         skipped: None,
@@ -156,7 +176,36 @@ fn outside(
 ) -> io::Result<BTreeSet<String>> {
     let scope = &layout.scope;
     let mut found = BTreeSet::new();
-    if !exactly(root, scope).is_ok_and(|path| path.is_dir()) {
+    for path in code_files(root, layout, scope)? {
+        if places.iter().chain(skipped).any(|p| within(&path, p)) {
+            continue;
+        }
+        found.insert(first_entry(&path, scope));
+    }
+    Ok(found)
+}
+
+/// The entry directly in `dir` that holds `path`: the file itself, or the directory it sits in. Both are from the
+/// root, and `dir` is "" for the root.
+fn first_entry(path: &str, dir: &str) -> String {
+    let inside = if dir.is_empty() {
+        path
+    } else {
+        &path[dir.len() + 1..]
+    };
+    let first = inside.split('/').next().unwrap_or(inside);
+    if dir.is_empty() {
+        first.to_string()
+    } else {
+        format!("{dir}/{first}")
+    }
+}
+
+/// Every code file in `dir` (from the root, "" for the root), from the root with `/`. Files the project's `.gitignore`
+/// files exclude, and hidden ones, are not looked at: see [`outside`].
+fn code_files(root: &Path, layout: &Layout, dir: &str) -> io::Result<Vec<String>> {
+    let mut found = Vec::new();
+    if !exactly(root, dir).is_ok_and(|path| path.is_dir()) {
         return Ok(found);
     }
     let walk = ignore::WalkBuilder::new(root)
@@ -165,43 +214,67 @@ fn outside(
         .ignore(false)
         .git_global(false)
         .git_exclude(false)
-        // From the root, so its `.gitignore` applies to the scope too; into the scope only
+        // From the root, so its `.gitignore` applies to `dir` too; into `dir` only
         .filter_entry({
             let root = root.to_path_buf();
-            let scope = scope.clone();
+            let dir = dir.to_string();
             move |entry| {
                 let path = relative_path(entry.path(), &root);
-                scope.is_empty()
-                    || path.is_empty()
-                    || within(&path, &scope)
-                    || within(&scope, &path)
+                dir.is_empty() || path.is_empty() || within(&path, &dir) || within(&dir, &path)
             }
         })
         .build();
     for entry in walk {
         let entry = entry.map_err(|e| io::Error::other(e.to_string()))?;
-        if !entry.file_type().is_some_and(|t| t.is_file())
-            || !layout.is_code(&entry.file_name().to_string_lossy())
+        if entry.file_type().is_some_and(|t| t.is_file())
+            && layout.is_code(&entry.file_name().to_string_lossy())
+        {
+            found.push(relative_path(entry.path(), root));
+        }
+    }
+    Ok(found)
+}
+
+/// The code in a layer with levels (`ui`) that sits beside its levels, as entries directly in the layer: the layer's
+/// own files (`ui/__init__.py`) are not counted. Every level counts as a level here, absent or not: an absent level
+/// that exists has a finding of its own.
+fn beside_levels(
+    root: &Path,
+    layout: &Layout,
+    layer: &Place,
+    levels: &[&Place],
+) -> io::Result<BTreeSet<String>> {
+    let mut found = BTreeSet::new();
+    for path in code_files(root, layout, &layer.path)? {
+        if layer.files.iter().any(|(own, _)| *own == path)
+            || levels.iter().any(|level| within(&path, &level.path))
         {
             continue;
         }
-        let path = relative_path(entry.path(), root);
-        if places.iter().chain(skipped).any(|p| within(&path, p)) {
-            continue;
-        }
-        let inside = if scope.is_empty() {
-            path.as_str()
-        } else {
-            &path[scope.len() + 1..]
-        };
-        let first = inside.split('/').next().unwrap_or(inside);
-        found.insert(if scope.is_empty() {
-            first.to_string()
-        } else {
-            format!("{scope}/{first}")
-        });
+        found.insert(first_entry(&path, &layer.path));
     }
     Ok(found)
+}
+
+/// Where each kind of part shared by the whole UI goes, for the message on code beside the levels. Few readers know
+/// that Atomic Design counts parts that render nothing as atoms, so the message says it.
+fn where_ui_parts_go(places: &[Place]) -> String {
+    let path = |name: &str| {
+        &places
+            .iter()
+            .find(|p| p.name == name)
+            .unwrap_or_else(|| panic!("every layout with ui has {name}: a test reads them"))
+            .path
+    };
+    format!(
+        "a part that knows no project concept, visible or not (a design value, one behaviour, a provider of a theme), \
+         goes in {}/; one that knows domain types, such as a provider of the signed-in user, in {}/ or above; one \
+         that calls a use case in {}/; one that knows no UI framework in {}/",
+        path("ui.atoms"),
+        path("ui.organisms"),
+        path("ui.pages"),
+        path("utils"),
+    )
 }
 
 #[cfg(test)]

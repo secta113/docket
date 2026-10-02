@@ -676,6 +676,91 @@ fn each_difference_from_the_declaration_fails() {
     }
 }
 
+/// A repository that keeps every rule, with `ui`: what `docket create` makes for `stack`, and a log entry.
+fn repo_with_ui(stack: &str, absent: &str) -> tempfile::TempDir {
+    let root = declared(&format!(
+        "stack = \"{stack}\"\nareas = [\"a\"]\nabsent = [{absent}]\n"
+    ));
+    let out = run(&["--root", &root_arg(root.path()), "create"]);
+    assert!(out.status.success(), "{}", stdout(&out));
+    fs::write(
+        root.path().join("docs/log.md"),
+        "# Log\n\n## 2026-10-02\n\n* Something\n",
+    )
+    .unwrap();
+    root
+}
+
+#[test]
+fn ui_holds_only_its_levels() {
+    // (stack, what is planted beside the levels, what the message names, where it says atoms are)
+    let cases = [
+        ("python", "ui/helpers.py", "ui/helpers.py", "ui/atoms/"),
+        ("python", "ui/shared/theme.py", "ui/shared", "ui/atoms/"),
+        // Windows runs it with Python all the same
+        ("python", "ui/Helpers.PY", "ui/Helpers.PY", "ui/atoms/"),
+        (
+            "typescript",
+            "src/ui/theme.css",
+            "src/ui/theme.css",
+            "src/ui/atoms/",
+        ),
+        (
+            "typescript",
+            "src/ui/hooks/useWidth.ts",
+            "src/ui/hooks",
+            "src/ui/atoms/",
+        ),
+    ];
+    for (stack, planted, named, atoms) in cases {
+        let root = repo_with_ui(stack, "");
+        plant_file(root.path(), planted);
+        let out = run(&["--root", &root_arg(root.path()), "check"]);
+        let said = stdout(&out);
+        assert_eq!(out.status.code(), Some(1), "{planted}: {said}");
+        assert!(
+            said.contains(&format!("code in ui outside its levels: {named} (")),
+            "{planted}: {said}"
+        );
+        // Where it goes, for a reader who does not know that atoms include parts that render nothing
+        assert!(
+            said.contains("visible or not") && said.contains(atoms),
+            "{planted}: {said}"
+        );
+    }
+}
+
+#[test]
+fn ui_parts_in_a_level_pass() {
+    let root = repo_with_ui("python", "");
+    let r = root.path();
+    fs::write(r.join(".gitignore"), "ui/generated/\n").unwrap();
+    for path in [
+        "ui/atoms/theme/__init__.py",
+        "ui/atoms/theme/provider.py",
+        "ui/organisms/session/provider.py",
+        "ui/pages/home.py",
+        // Not code, and ignored by git
+        "ui/README.md",
+        "ui/generated/x.py",
+    ] {
+        plant_file(r, path);
+    }
+    let out = run(&["--root", &root_arg(r), "check"]);
+    assert!(out.status.success(), "{}", stdout(&out));
+
+    // A level declared absent that exists is its own finding, not code beside the levels too
+    let root = repo_with_ui("python", "\"ui.templates\"");
+    plant_file(root.path(), "ui/templates/x.py");
+    let out = run(&["--root", &root_arg(root.path()), "check"]);
+    let said = stdout(&out);
+    assert!(
+        said.contains("ui.templates is declared absent, but ui/templates/ exists"),
+        "{said}"
+    );
+    assert!(!said.contains("outside its levels"), "{said}");
+}
+
 #[test]
 fn code_that_is_not_the_projects_is_not_looked_at() {
     let root = clean_repo();

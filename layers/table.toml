@@ -24,7 +24,10 @@ Framework-specific presentation and interaction: buttons, views, screen parts. `
 
 Does not import `infrastructure`. Organized by atomic design: `pages` > `templates` > `organisms` >
 `molecules` > `atoms`; a level may import the levels below it, and only `pages` import `application`. The UI
-is responsible for presentation, not for features: split by level first, and by feature only inside a level."""
+is responsible for presentation, not for features: split by level first, and by feature only inside a level.
+
+Every part of the UI sits in a level, and nothing sits beside them: what the whole UI shares goes in the lowest
+level that may know what it knows."""
 
 [[layer]]
 name = "application"
@@ -82,7 +85,10 @@ name = "organisms"
 imports = ["domain", "utils"]
 role = """
 Meaningful groups, such as a list or a control panel. They may know `domain` types but do not call
-`application`; actions come in as callbacks."""
+`application`; actions come in as callbacks.
+
+A provider that hands `domain` values to its children, such as the signed-in user, sits here too, with the hook
+that reads it. It takes the function that loads the values as a callback, and `handler` passes the use case in."""
 
 [[level]]
 name = "molecules"
@@ -95,7 +101,9 @@ neither `domain` nor `application`."""
 name = "atoms"
 imports = ["utils"]
 role = """
-The smallest parts: one button, one label. They know no project concept: they import neither `domain` nor
-`application`, and take only plain values.
+The smallest parts, visible or not: one button, one label, a design value (a colour, a spacing, a font, an
+animation), one behaviour (following the width of the screen, detecting a click outside), a provider that hands
+a theme to its children. They know no project concept: they import neither `domain` nor `application`, and take
+only plain values.
 
 If a part cannot be named without referring to where it is used, it is not an atom."""
