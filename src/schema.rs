@@ -250,8 +250,8 @@ pub fn spec(folder: &str, text: &str) -> Result<(Spec, Sections), String> {
 
 fn spec_fields(fields: &mut Fields) -> Option<Spec> {
     fields.required("type", one_of(&["Spec"]));
-    let title = fields.required("title", non_empty_text);
-    let description = fields.required("description", non_empty_text);
+    let title = fields.required("title", one_line);
+    let description = fields.required("description", one_line);
     let status = fields.required(
         "status",
         status(&[Status::Draft, Status::Stable, Status::Deprecated]),
@@ -272,14 +272,14 @@ fn spec_fields(fields: &mut Fields) -> Option<Spec> {
 
 fn item(fields: &mut Fields) -> Option<Item> {
     fields.required("type", one_of(&["Backlog Item"]));
-    let title = fields.required("title", non_empty_text);
-    let description = fields.required("description", non_empty_text);
+    let title = fields.required("title", one_line);
+    let description = fields.required("description", one_line);
     let tag = fields.required("tags", one_tag);
     let status = fields.required("status", status(&[Status::Stable, Status::Deprecated]));
     let filed = fields.required("filed", date);
     let verified = fields.required("verified", stamps);
     let deadline_kind = fields.required("deadline_kind", deadline_kind);
-    let deadline = fields.required("deadline", non_empty_text);
+    let deadline = fields.required("deadline", one_line);
     let stale_after = fields.optional("stale_after", time);
     okf_optional(fields);
     let item = Item {
@@ -317,8 +317,8 @@ fn item(fields: &mut Fields) -> Option<Item> {
 
 fn guide(fields: &mut Fields) -> Option<Guide> {
     fields.required("type", one_of(&["Guide"]));
-    let title = fields.required("title", non_empty_text);
-    let description = fields.required("description", non_empty_text);
+    let title = fields.required("title", one_line);
+    let description = fields.required("description", one_line);
     let status = fields
         .optional(
             "status",
@@ -463,6 +463,21 @@ fn non_empty_text(value: &Yaml) -> Result<String, String> {
     text(value).and_then(|s| {
         if s.trim().is_empty() {
             Err("empty".into())
+        } else {
+            Ok(s)
+        }
+    })
+}
+
+/// A text the index lists on one line. A line break would end the entry there, and what follows it could read as a
+/// heading or an entry of its own.
+fn one_line(value: &Yaml) -> Result<String, String> {
+    non_empty_text(value).and_then(|s| {
+        if s.contains(['\n', '\r']) {
+            Err(format!(
+                "on more than one line, and the index lists it on one (in YAML, write it on one line, or fold it \
+                 with >-, which keeps no line break at the end): {s:?}"
+            ))
         } else {
             Ok(s)
         }
@@ -640,10 +655,10 @@ fn stamps(value: &Yaml) -> Result<Vec<Stamp>, String> {
     }
 }
 
-/// A list of tags. An empty tag names no area.
+/// A list of tags, each on one line. An empty tag names no area.
 fn text_list(value: &Yaml) -> Result<Vec<String>, String> {
     match value {
-        Yaml::Array(list) => list.iter().map(non_empty_text).collect(),
+        Yaml::Array(list) => list.iter().map(one_line).collect(),
         other => Err(format!("not a list: {other:?}")),
     }
 }
@@ -651,7 +666,7 @@ fn text_list(value: &Yaml) -> Result<Vec<String>, String> {
 /// The slug of a document: its file name without `.md`, which never changes once the file exists. Not a path, so it
 /// still names the document after a move between `docs/specs/` and `docs/done/`.
 fn slug(value: &Yaml) -> Result<String, String> {
-    let s = non_empty_text(value)?;
+    let s = one_line(value)?;
     if s.contains(['/', '\\']) {
         Err(format!(
             "{s} is a path; write the slug, the file name without .md"
@@ -861,6 +876,14 @@ Not yet.
                      \n    title: GA4 BigQuery Export schema\n    author: team:ga4-docs\n    usage_count: 5000\
                      \n    last_modified: 2026-05-30T00:00:00Z\
                      \nusage_window: { from: 2026-06-01T00:00:00Z, to: 2026-06-30T00:00:00Z }",
+                ),
+            ),
+            // A long text folded over lines in YAML is one line once read
+            (
+                "a description folded with >-",
+                good(
+                    "description: Something is wrong.",
+                    "description: >-\n  Something\n  is wrong.",
                 ),
             ),
             // The content may be in any language
@@ -1111,6 +1134,37 @@ Not yet.
             ),
             ("an empty tag", good("tags: [operations]", "tags: [\"\"]")),
             ("a blank tag", good("tags: [operations]", "tags: [\" \"]")),
+            // The index lists each of these on one line: a line break would end the entry and start another
+            (
+                "a description on two lines",
+                good(
+                    "description: Something is wrong.",
+                    "description: \"Wrong.\\n\\n# INJECTED HEADING\\n\\n* Fake entry\"",
+                ),
+            ),
+            (
+                "a title on two lines",
+                good("title: Some problem", "title: \"Some\\nproblem\""),
+            ),
+            (
+                "a deadline on two lines",
+                good(
+                    "deadline: until the next deploy",
+                    "deadline: \"until\\r\\nthe next deploy\"",
+                ),
+            ),
+            (
+                "a tag on two lines",
+                good("tags: [operations]", "tags: [\"oper\\nations\"]"),
+            ),
+            // A folded text keeps one line break at its end unless it is folded with >-
+            (
+                "a folded description",
+                good(
+                    "description: Something is wrong.",
+                    "description: >\n  Something\n  is wrong.",
+                ),
+            ),
             (
                 "filed is not a date",
                 good("filed: 2026-09-27", "filed: 2026-13-01"),

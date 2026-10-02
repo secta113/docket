@@ -269,6 +269,11 @@ pub fn area_problems(areas: &[String]) -> Vec<String> {
             found.push(format!(
                 "{DECLARATION}: areas has {area:?}, with a space at one end"
             ));
+        } else if area.contains(['\n', '\r']) {
+            // A heading is one line: the rest would become text, or a heading of its own
+            found.push(format!(
+                "{DECLARATION}: areas has {area:?}, on more than one line: an area is one heading"
+            ));
         }
         if let Some(earlier) = areas[..i]
             .iter()
@@ -516,6 +521,9 @@ mod tests {
             vec!["docket "],
             vec!["docket", "Docket"],
             vec!["docket", "docket"],
+            // A heading is one line, or the rest of the area becomes a heading of its own
+            vec!["injected\n# EVIL_AREA"],
+            vec!["a\rb"],
         ];
         for areas in bad {
             let areas: Vec<String> = areas.into_iter().map(String::from).collect();

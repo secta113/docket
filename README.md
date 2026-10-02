@@ -176,7 +176,7 @@ stale_after: 2027-01-01T00:00:00+09:00   # optional: when to measure the state a
 - **The bundle is there:** `docs/`, `docs/index.md`, `docs/backlog/`, `docs/backlog/rules.md`, `docs/specs/`,
   `docs/specs/rules.md` and `docs/done/` exist, and the declaration with its `areas` can be read. Without them every other check would pass
   with nothing checked.
-- **The areas are distinct headings:** none is empty or has a space at either end, and no two differ only in case.
+- **The areas are distinct headings:** none is empty, has a space at either end or a line break, and no two differ only in case.
 - **Every backlog item keeps the format:** the fields above with their types, and non-empty Trigger, State and Details
   (and Resolution when closed). A field docket does not know passes as an extension, as OKF allows, unless it looks
   like a misspelling of a field the document type has (`stale_afer`, `staleAfter`, `Title`), or is a field only
@@ -184,8 +184,10 @@ stale_after: 2027-01-01T00:00:00+09:00   # optional: when to measure the state a
   document type, as a misspelled optional field would otherwise be silently dropped. A deadline is an event or a reason, never only a date
   (`2026-10-31`, `2026/10/31`, `31.10.2026`, `2026年10月31日` or a month alone); an event may contain a date. Every
   time has a time zone. `stale_after` is later than the last `verified`. A required text is not blank (spaces alone
-  are empty), in every document type, and no tag is empty. The one tag is a declared area, and the message lists the
-  declared ones.
+  are empty), in every document type, and no tag is empty. What the index lists (`title`, `description`, `deadline`
+  and the tags) is on one line: a line break would end the entry and start a heading or an entry of its own. A
+  title is written into the index with `[`, `]` and `\` escaped, so it stays the text of its own link. The one tag
+  is a declared area, and the message lists the declared ones.
 - **Every link in `# Details` resolves,** with heading anchors computed as GitHub computes them. A path with a drive
   letter (`C:/...`) fails: it names a file on one machine. Only a URL (`https:`, `mailto:`) is not checked, and a
   file name with a line number (`check.rs:104`) is a path, not a URL. A path is separated with `/`: only Windows

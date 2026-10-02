@@ -331,6 +331,19 @@ fn with_path(e: io::Error, path: &Path) -> io::Error {
     io::Error::new(e.kind(), format!("{}: {e}", path.display()))
 }
 
+/// A title as the text of a link in the index. `[`, `]` and `\` are escaped, so a title with brackets stays the text
+/// of its own entry instead of closing the link early and opening another.
+pub fn link_text(title: &str) -> String {
+    let mut out = String::with_capacity(title.len());
+    for c in title.chars() {
+        if matches!(c, '[' | ']' | '\\') {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out
+}
+
 /// The first sentence of the first line, for the index. Bold text at the start counts as a sentence on its own.
 /// Works for any language: a sentence ends at "。" or at "." followed by a space or the end of the line.
 pub fn first_sentence(text: &str) -> &str {
@@ -398,7 +411,7 @@ pub fn render_backlog(
         for (name, (item, sections)) in closed {
             out.push(format!(
                 "* [{}]({name}) - {} | Resolution: {}",
-                item.title,
+                link_text(&item.title),
                 item.description,
                 first_sentence(&sections[CLOSED_SECTION])
             ));
@@ -413,11 +426,13 @@ fn guide_section(guides: &BTreeMap<String, Guide>) -> Vec<String> {
         return Vec::new();
     }
     let mut out = vec!["".into(), "# Guides".into(), "".into()];
-    out.extend(
-        guides
-            .iter()
-            .map(|(name, guide)| format!("* [{}]({name}) - {}", guide.title, guide.description)),
-    );
+    out.extend(guides.iter().map(|(name, guide)| {
+        format!(
+            "* [{}]({name}) - {}",
+            link_text(&guide.title),
+            guide.description
+        )
+    }));
     out
 }
 
@@ -436,7 +451,7 @@ fn open_line(name: &str, item: &Item, sections: &Sections) -> String {
         .unwrap_or_default();
     format!(
         "* [{}]({name}) - {} | State ({measured}): {} | {deadline}{stale}",
-        item.title,
+        link_text(&item.title),
         item.description,
         first_sentence(&sections["State"])
     )
@@ -474,13 +489,14 @@ pub fn render_specs(folder: &str, all: &Specs, areas: &[String]) -> String {
                 } else {
                     format!("../{epic_folder}/{epic}.md")
                 };
-                format!(" | Epic: [{}]({target})", epic_spec.title)
+                format!(" | Epic: [{}]({target})", link_text(&epic_spec.title))
             }
             _ => String::new(),
         };
         format!(
             "* [{}]({name}) - {} | {after}{epic}",
-            spec.title, spec.description
+            link_text(&spec.title),
+            spec.description
         )
     };
     let mut out = vec![GENERATED.to_string()];
@@ -614,6 +630,18 @@ Not yet. Measured by hand.
         let line = "* [Some problem](good.md) - Something is wrong. | State (2026-09-28): Not yet. | Deadline: until \
                     the next deploy";
         assert_eq!(index, format!("{GENERATED}\n\n# operations\n\n{line}\n"));
+    }
+
+    #[test]
+    fn a_title_with_brackets_stays_the_text_of_its_own_entry() {
+        let title = r#"title: 'Evil ](fake.md) [hacked \ end'"#;
+        let item = GOOD.replace("title: Some problem", title);
+        let index = render_backlog(&parsed(&[("x.md", item)]).items, &BTreeMap::new(), &areas());
+        let line = index.lines().find(|l| l.starts_with("* ")).unwrap();
+        assert!(
+            line.starts_with(r"* [Evil \](fake.md) \[hacked \\ end](x.md) - "),
+            "{line}"
+        );
     }
 
     #[test]
