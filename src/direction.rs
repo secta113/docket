@@ -8,7 +8,9 @@
 //! - An import of a module in no layer present (the standard library, a third-party package, a layer declared absent)
 //!   is not judged. Imports built at run time (`importlib.import_module`, `__import__`) are not seen.
 //!
-//! Python only: for `rust` and `typescript`, the check says that it did not run.
+//! For `python`, a module is named by its dotted name, and sits in the place its parts start with. For `typescript`,
+//! an import is resolved to a path (`typescript.rs`), and sits in the place that path starts with. For `rust`, the
+//! check says that it did not run.
 
 use std::io;
 use std::path::Path;
@@ -16,7 +18,7 @@ use std::path::Path;
 use ruff_python_ast::statement_visitor::{StatementVisitor, walk_stmt};
 use ruff_python_ast::{PySourceType, Stmt};
 
-use crate::layers::{Declared, Entry, Place, Table, listed, table};
+use crate::layers::{Declared, Entry, Layout, Place, Table, listed, table};
 use crate::source::read_source;
 use crate::structure::code_files;
 
@@ -36,37 +38,111 @@ pub fn problems(root: &Path, declared: &Declared) -> io::Result<Direction> {
         // A repository of records only: the structure check already says that the layers were not checked
         return Ok(Direction::default());
     };
-    if declared.declaration.stack != "python" {
-        return Ok(Direction {
-            found: Vec::new(),
-            skipped: Some(format!(
-                "the direction of imports is not checked: Rotproof does not read the imports of a {} project yet",
-                declared.declaration.stack
-            )),
-        });
-    }
-    let table = table();
     // Only the places that are there: an import of a layer declared absent names a module the project does not have
     let places: Vec<&Place> = declared
         .places
         .iter()
         .filter(|p| !declared.is_absent(p) && crate::source::exactly(root, &p.path).is_ok())
         .collect();
+    match declared.declaration.stack.as_str() {
+        "python" => python(root, layout, &places),
+        "typescript" => typescript(root, layout, &places),
+        stack => Ok(Direction {
+            found: Vec::new(),
+            skipped: Some(format!(
+                "the direction of imports is not checked: Rotproof does not read the imports of a {stack} project yet"
+            )),
+        }),
+    }
+}
+
+/// Read a code file for its imports: `None`, with a finding, when it is not UTF-8.
+fn source_of(root: &Path, path: &str, found: &mut Vec<String>) -> io::Result<Option<String>> {
+    match read_source(&root.join(path)) {
+        Ok(source) => Ok(Some(source)),
+        Err(e) if e.kind() == io::ErrorKind::InvalidData => {
+            found.push(format!(
+                "{path}: cannot be read as UTF-8, so its imports are not checked"
+            ));
+            Ok(None)
+        }
+        Err(e) => Err(io::Error::new(e.kind(), format!("{path}: {e}"))),
+    }
+}
+
+/// The finding for an import from `from` that lands in `to`, or `None` when the table allows it.
+fn judged(table: &Table, at: &str, what: &str, from: &Place, to: &Place) -> Option<String> {
+    (!allowed(table, from, to)).then(|| {
+        format!(
+            "{at}: imports {what}, {}; {}",
+            described(from, to),
+            what_it_may_import(table, from)
+        )
+    })
+}
+
+/// The direction check of a TypeScript project: every import of a source file in a layer, resolved to a path
+/// (`typescript.rs`), judged by the place that path sits in.
+fn typescript(root: &Path, layout: &Layout, places: &[&Place]) -> io::Result<Direction> {
+    let table = table();
+    let aliases = crate::typescript::aliases(root)?;
+    let mut found: Vec<String> = aliases
+        .problems
+        .iter()
+        .map(|why| format!("{why}; imports through it are not checked"))
+        .collect();
+    let parts = |path: &str| -> Vec<String> { path.split('/').map(String::from).collect() };
+    for layer in places.iter().filter(|p| p.parent.is_none()) {
+        for path in code_files(root, layout, &layer.path)? {
+            if !crate::typescript::is_source(&path) {
+                continue;
+            }
+            let Some(from) = place_of(&parts(&path), places) else {
+                continue;
+            };
+            let Some(source) = source_of(root, &path, &mut found)? else {
+                continue;
+            };
+            let read = crate::typescript::read(&source, &path);
+            if let Some((line, why)) = read.error {
+                found.push(format!(
+                    "{path}:{line}: cannot be read as TypeScript ({why}), so the imports after it may be misread"
+                ));
+            }
+            for (line, specifier) in read.imports {
+                let Some(target) = aliases.resolve(root, &path, &specifier) else {
+                    continue;
+                };
+                let Some(to) = place_of(&parts(&target), places) else {
+                    continue;
+                };
+                found.extend(judged(
+                    &table,
+                    &format!("{path}:{line}"),
+                    &format!("{specifier} ({target})"),
+                    from,
+                    to,
+                ));
+            }
+        }
+    }
+    Ok(Direction {
+        found,
+        skipped: None,
+    })
+}
+
+/// The direction check of a Python project: every import of a `.py` file in a layer, as the module it names.
+fn python(root: &Path, layout: &Layout, places: &[&Place]) -> io::Result<Direction> {
+    let table = table();
     let mut found = Vec::new();
     for layer in places.iter().filter(|p| p.parent.is_none()) {
         for path in code_files(root, layout, &layer.path)? {
-            let Some(from) = place_of(&module_parts(&path), &places) else {
+            let Some(from) = place_of(&module_parts(&path), places) else {
                 continue;
             };
-            let source = match read_source(&root.join(&path)) {
-                Ok(source) => source,
-                Err(e) if e.kind() == io::ErrorKind::InvalidData => {
-                    found.push(format!(
-                        "{path}: cannot be read as UTF-8, so its imports are not checked"
-                    ));
-                    continue;
-                }
-                Err(e) => return Err(io::Error::new(e.kind(), format!("{path}: {e}"))),
+            let Some(source) = source_of(root, &path, &mut found)? else {
+                continue;
             };
             let (imports, error) = imports(&source, &package(&path));
             if let Some((line, why)) = error {
@@ -75,17 +151,16 @@ pub fn problems(root: &Path, declared: &Declared) -> io::Result<Direction> {
                 ));
             }
             for (line, module) in imports {
-                let Some(to) = place_of(&module, &places) else {
+                let Some(to) = place_of(&module, places) else {
                     continue;
                 };
-                if !allowed(&table, from, to) {
-                    found.push(format!(
-                        "{path}:{line}: imports {}, {}; {}",
-                        module.join("."),
-                        described(from, to),
-                        what_it_may_import(&table, from)
-                    ));
-                }
+                found.extend(judged(
+                    &table,
+                    &format!("{path}:{line}"),
+                    &module.join("."),
+                    from,
+                    to,
+                ));
             }
         }
     }

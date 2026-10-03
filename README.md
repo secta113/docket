@@ -29,8 +29,8 @@ two structures:
   hand.
 
 Rotproof makes the layer directories, checks that they are where the project declares them, and reads the imports to
-check their direction: in Python now, with Rust and TypeScript to follow. For those two, `rotproof check` says that it
-did not check the direction.
+check their direction: in Python and TypeScript now, with Rust to follow. For Rust, `rotproof check` says that it did
+not check the direction.
 
 The records live in `docs/`, which is a bundle in [OKF 0.2](https://github.com/GoogleCloudPlatform/open-knowledge-format)
 (its `SPEC.md` as of commit `ad30107`): every document has YAML frontmatter with a `type`, `index.md` and `log.md` are
@@ -271,6 +271,16 @@ stale_after: 2027-01-01T00:00:00+09:00   # optional: when to measure the state a
   layer. Imports of modules in no layer (the standard library, packages) are not judged, and imports built at run
   time (`importlib`) are not seen. A file that is not UTF-8 or has a syntax error fails, since its imports cannot all
   be read.
+- **The layers import only what the table allows** (TypeScript): every `import` (`import type` too), `export ...
+  from`, `import x = require(...)`, and `import(...)` and `require(...)` with a literal string, in the `.ts`, `.tsx`,
+  `.js` and `.jsx` files (and `.mts`, `.cts`, `.mjs`, `.cjs`) of the layers, read with
+  [oxc](https://oxc.rs/). The place of an import is the path it lands on, whether or not a file is there: a relative
+  specifier from the file, one starting with `/` from the root (as Vite reads it), and any other through
+  `compilerOptions.paths` of the `tsconfig*.json` files at the root (and the local files they extend), then through
+  their `baseUrl` when a module is there; otherwise it names a package, which is not judged. A `tsconfig*.json` that
+  cannot be read, or a `paths` entry with more than one `*`, fails rather than leaving its aliases unjudged. Two
+  limits: only the first target of a `paths` entry is used, and a config extended from a package is not read, so an
+  alias defined only there is taken for a package.
 - **No comment holds `TODO`, `FIXME`, `XXX`, `HACK` or `NOTE`** (Python): in upper case, as whole words, in any code
   file outside `unchecked`, `tests/` included. Work left to do belongs in the backlog, where it is listed and closed,
   and a decision with its reason in the spec or the log entry of the change; a comment that explains how to read the

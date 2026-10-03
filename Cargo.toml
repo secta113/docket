@@ -8,6 +8,12 @@ license = "MIT OR Apache-2.0"
 chrono = "0.4.45"
 clap = { version = "4.6.7", features = ["derive"] }
 ignore = "0.4.33"
+# Pinned exactly, and together: oxc's API changes between minor versions
+oxc_allocator = "=0.152.0"
+oxc_ast = "=0.152.0"
+oxc_ast_visit = "=0.152.0"
+oxc_parser = "=0.152.0"
+oxc_span = "=0.152.0"
 percent-encoding = "2.3.2"
 pulldown-cmark = { version = "0.13.4", default-features = false }
 regex = "1.13.1"

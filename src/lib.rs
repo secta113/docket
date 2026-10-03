@@ -14,3 +14,4 @@ pub mod project;
 pub mod schema;
 pub mod source;
 pub mod structure;
+pub mod typescript;

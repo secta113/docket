@@ -15,4 +15,6 @@ accepted = [
     "BSD-3-Clause",
     "Unicode-3.0",
     "Unicode-DFS-2016",
+    # dragonbox_ecma, which oxc's core (oxc_syntax, oxc_ecmascript) links: "Apache-2.0 WITH LLVM-exception OR BSL-1.0"
+    "BSL-1.0",
 ]

@@ -35,7 +35,8 @@ Also tracked, as in most repositories: `.gitattributes`, `.gitignore`, `Cargo.lo
 | `check.rs` | Every rule `rotproof check` runs, each with its floor |
 | `layers.rs` | Reading the layer definitions in `layers/` and a project's `.config/rotproof.toml` |
 | `structure.rs` | The structure check: the tree agrees with `.config/rotproof.toml`, either way |
-| `direction.rs` | The direction check: every layer imports only what `layers/table.toml` allows (Python) |
+| `direction.rs` | The direction check: every layer imports only what `layers/table.toml` allows (Python, TypeScript) |
+| `typescript.rs` | Reading TypeScript and JavaScript with oxc: imports, where each lands (through `tsconfig*.json`), and comments |
 | `markers.rs` | The marker check: no comment in the code holds `TODO`, `FIXME`, `XXX`, `HACK` or `NOTE` (Python) |
 | `hook.rs` | `rotproof stop-hook`, the hook Claude Code and Gemini CLI run when the agent stops, and the settings files that `rotproof create` writes for it |
 | `init.rs` | `rotproof init`: writing a project's declaration, once |
@@ -75,6 +76,8 @@ Also tracked, as in most repositories: `.gitattributes`, `.gitignore`, `Cargo.lo
 - **cargo-about is pinned in the `Dockerfile` and `.github/workflows/licenses.yml`, to the same version,** and
   `cargo xtask ci` fails when they differ; `cargo xtask licenses` fails when the installed one is another: another
   version may write another text. After changing it, run `cargo xtask licenses`.
+- **The `oxc_*` crates are pinned to one exact version, and move together,** for the same reason as the Ruff crates
+  below: oxc's API changes between minor versions. Bump them when TypeScript gains syntax Rotproof fails to read.
 - **`ruff_python_parser` and `ruff_python_ast` are pinned to one exact version, and move together.** They are
   internal crates of Ruff, whose API changes between any two versions. Bump them by hand when the toolchain changes
   (a new Ruff may need a newer Rust) and when Python gains syntax Rotproof fails to read.

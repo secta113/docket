@@ -1068,39 +1068,136 @@ const MAY_IMPORT: [&str; 11] = [
 
 #[test]
 fn every_pair_of_places_is_allowed_or_fails_as_the_table_says() {
-    let root = repo_with_ui("python", "");
-    let r = root.path();
-    // Each place's own file imports every place, one per line, in the order of PLACES
-    let imports: String = PLACES.iter().map(|to| format!("import {to}\n")).collect();
-    for from in PLACES {
-        fs::write(r.join(from.replace('.', "/")).join("__init__.py"), &imports).unwrap();
-    }
-    let out = run(&["--root", &root_arg(r), "check"]);
-    let said = stdout(&out);
-    let mut forbidden = 0;
-    for (row, from) in PLACES.iter().enumerate() {
-        let cells: Vec<&str> = MAY_IMPORT[row].split(' ').collect();
-        assert_eq!(cells.len(), PLACES.len(), "{from}");
-        for (column, to) in PLACES.iter().enumerate() {
-            let named = format!(
-                "{}/__init__.py:{}: imports {to}, ",
-                from.replace('.', "/"),
-                column + 1
-            );
-            match cells[column] {
-                "Y" => assert!(!said.contains(&named), "{from} -> {to} failed:\n{said}"),
-                _ => {
-                    forbidden += 1;
-                    assert!(said.contains(&named), "{from} -> {to} passed:\n{said}");
+    // (stack, the file of a place, how a line imports a place, how the finding names the import)
+    type Form = fn(&str) -> String;
+    let stacks: [(&str, Form, Form, Form); 2] = [
+        (
+            "python",
+            |from| format!("{}/__init__.py", from.replace('.', "/")),
+            |to| format!("import {to}\n"),
+            |to| to.to_string(),
+        ),
+        (
+            "typescript",
+            |from| format!("src/{}/index.ts", from.replace('.', "/")),
+            |to| format!("import '/src/{}';\n", to.replace('.', "/")),
+            |to| {
+                let path = to.replace('.', "/");
+                format!("/src/{path} (src/{path})")
+            },
+        ),
+    ];
+    for (stack, file, import, named_as) in stacks {
+        let root = repo_with_ui(stack, "");
+        let r = root.path();
+        // Each place's own file imports every place, one per line, in the order of PLACES
+        let imports: String = PLACES.iter().map(|to| import(to)).collect();
+        for from in PLACES {
+            fs::write(r.join(file(from)), &imports).unwrap();
+        }
+        let out = run(&["--root", &root_arg(r), "check"]);
+        let said = stdout(&out);
+        let mut forbidden = 0;
+        for (row, from) in PLACES.iter().enumerate() {
+            let cells: Vec<&str> = MAY_IMPORT[row].split(' ').collect();
+            assert_eq!(cells.len(), PLACES.len(), "{from}");
+            for (column, to) in PLACES.iter().enumerate() {
+                let named = format!(
+                    "{}:{}: imports {}, in {to}",
+                    file(from),
+                    column + 1,
+                    named_as(to)
+                );
+                match cells[column] {
+                    "Y" => assert!(
+                        !said.contains(&named),
+                        "{stack}: {from} -> {to} failed:\n{said}"
+                    ),
+                    _ => {
+                        forbidden += 1;
+                        assert!(
+                            said.contains(&named),
+                            "{stack}: {from} -> {to} passed:\n{said}"
+                        );
+                    }
                 }
             }
         }
+        // The floor: every forbidden pair is one line, and nothing else failed
+        assert_eq!(forbidden, 68);
+        assert_eq!(
+            said.matches(": imports ").count(),
+            forbidden,
+            "{stack}: {said}"
+        );
+        assert_eq!(out.status.code(), Some(1));
+        assert!(said.contains("the layers import only what layers/table.toml allows:"));
     }
-    // The floor: every forbidden pair is one line, and nothing else failed
-    assert_eq!(forbidden, 68);
-    assert_eq!(said.matches(": imports ").count(), forbidden, "{said}");
-    assert_eq!(out.status.code(), Some(1));
-    assert!(said.contains("the layers import only what layers/table.toml allows:"));
+}
+
+#[test]
+fn every_form_of_typescript_import_is_judged() {
+    let root = repo_with_ui("typescript", "");
+    let r = root.path();
+    let write = |path: &str, text: &str| {
+        let full = r.join(path);
+        fs::create_dir_all(full.parent().unwrap()).unwrap();
+        fs::write(full, text).unwrap();
+    };
+    write(
+        "tsconfig.json",
+        "{\n  // as Vite writes it, with an alias added\n  \"compilerOptions\": { \"paths\": { \"@/*\": [\"./src/*\"] } },\n}\n",
+    );
+    write(
+        "src/domain/song.ts",
+        "import React from 'react';\nimport type { Play } from '../application/play';\nexport * from '@/infrastructure/db';\n\
+         export const load = () => import('../handler/main');\nconst x = require(`../utils/x`);\n",
+    );
+    write(
+        "src/ui/molecules/Row.tsx",
+        "import { Button } from '../atoms/Button';\nimport { List } from '../organisms/List';\nimport '../index.css';\n\
+         import logo from '../../domain/logo.svg?url';\nexport const Row = () => <p>{/* ../pages */}</p>;\n",
+    );
+    // Not a source file, ignored by git, or hidden: not read
+    write("src/domain/notes.md", "import '../handler'\n");
+    write(".gitignore", "src/domain/generated/\n");
+    write("src/domain/generated/x.ts", "import '../../handler';\n");
+    write("src/domain/.cache/x.ts", "import '../../handler';\n");
+    let out = run(&["--root", &root_arg(r), "check"]);
+    let said = stdout(&out);
+    for line in [
+        "src/domain/song.ts:2: imports ../application/play (src/application/play), in application; domain may \
+         import `utils`",
+        "src/domain/song.ts:3: imports @/infrastructure/db (src/infrastructure/db), in infrastructure; ",
+        "src/domain/song.ts:4: imports ../handler/main (src/handler/main), in handler; ",
+        "src/ui/molecules/Row.tsx:2: imports ../organisms/List (src/ui/organisms/List), in ui.organisms; \
+         ui.molecules may import the levels below it and `utils`",
+        "src/ui/molecules/Row.tsx:3: imports ../index.css (src/ui/index.css), in ui outside its levels; ",
+        "src/ui/molecules/Row.tsx:4: imports ../../domain/logo.svg?url (src/domain/logo.svg), in domain; ",
+    ] {
+        assert!(said.contains(line), "{line}:\n{said}");
+    }
+    assert_eq!(said.matches(": imports ").count(), 6, "{said}");
+}
+
+#[test]
+fn a_tsconfig_rotproof_cannot_read_fails() {
+    let root = repo_with_ui("typescript", "");
+    let r = root.path();
+    fs::write(
+        r.join("tsconfig.json"),
+        "{ \"compilerOptions\": { \"paths\": { \"@/*/*\": [\"src/*\"] } } }",
+    )
+    .unwrap();
+    let out = run(&["--root", &root_arg(r), "check"]);
+    assert_eq!(out.status.code(), Some(1), "{}", stdout(&out));
+    assert!(
+        stdout(&out).contains(
+            "tsconfig.json: paths maps \"@/*/*\" to \"src/*\", which Rotproof cannot read"
+        ),
+        "{}",
+        stdout(&out)
+    );
 }
 
 #[test]
@@ -1179,10 +1276,11 @@ fn the_stacks_without_a_direction_check_say_so() {
         let out = run(&["--root", &arg, "check"]);
         let said = stdout(&out);
         assert!(out.status.success(), "{stack}: {said}");
-        assert!(
+        assert_eq!(
             said.contains(&format!(
                 "the direction of imports is not checked: Rotproof does not read the imports of a {stack} project yet"
             )),
+            stack == "rust",
             "{stack}: {said}"
         );
         assert!(
