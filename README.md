@@ -7,8 +7,11 @@ Rotproof keeps a project's structure from drifting while LLMs and people change 
   are how an LLM, or a person, is made to split it: every piece of code has to land in a layer whose role and allowed
   imports are written down. Rotproof makes them when a project starts and checks them on every run, so the direction
   of dependencies stays what it was meant to be.
-- **The specs and records:** what is open, what is agreed, what is finished and why. A backlog (open defects and
-  postponed work, each with a trigger, a state and a deadline), specs, and a log, each kept to strict rules.
+- **The specs and records:** what is open, what is being changed, how things are now, and why. A backlog (open
+  defects and postponed work, each with a trigger, a state and a deadline), specs, knowledge documents (an API, a data
+  model, a decision, edited in place and named in the log at every edit), and a log, each kept to strict rules. A
+  finding does not stay outside them: a `TODO` or `NOTE` in a code comment fails the check, and a stop hook sends an
+  agent back when its last message leaves something open that it did not record.
 
 ## Principles
 
@@ -31,8 +34,9 @@ did not check the direction.
 The records live in `docs/`, which is a bundle in [OKF 0.2](https://github.com/GoogleCloudPlatform/open-knowledge-format)
 (its `SPEC.md` as of commit `ad30107`): every document has YAML frontmatter with a `type`, `index.md` and `log.md` are
 reserved names, and the log's headings are dates. An OKF reader can read the records as a bundle. The rules on top of
-that format (a backlog item's trigger, state and deadline, a spec's status and directory, the shape of a log entry)
-are Rotproof's own, stricter than OKF, and not part of it. Rotproof is not an OKF validator.
+that format (a backlog item's trigger, state and deadline, a closed record opening with its resolution, a knowledge
+document's hash in the log, the shape of a log entry) are Rotproof's own, stricter than OKF, and not part of it.
+Rotproof is not an OKF validator.
 
 ## Install
 
@@ -86,9 +90,9 @@ The index files only help if your agent reads them. Point it at them in your `AG
 reads first), for example:
 
 ```markdown
-- **Before starting work, read `docs/backlog/index.md` and `docs/specs/index.md`, and open only the items and specs
-  that concern the work.** Read the closed specs (under `# Closed` in `docs/specs/index.md`) and `docs/log.md` when
-  you need to know why something was decided.
+- **Before starting work, read `docs/backlog/index.md`, `docs/specs/index.md` and `docs/knowledge/index.md`, and
+  open only the items, specs and documents that concern the work.** Read the closed specs (under `# Closed` in
+  `docs/specs/index.md`) and `docs/log.md` when you need to know why something was decided.
 ```
 
 ## The stop hook
