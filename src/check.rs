@@ -567,10 +567,12 @@ pub fn misplaced(docs: &Docs) -> BTreeMap<String, String> {
             }
             Some((_, allowed)) if !kind.as_deref().is_some_and(|kind| allowed.contains(&kind)) => {
                 let shown = if folder.is_empty() { "." } else { folder };
+                // The type as written, quoted; a missing or non-text type said in words, not as Rust's `None`
+                let kind = kind.map_or("no type".into(), |kind| format!("type {kind:?}"));
                 bad.insert(
                     path.clone(),
                     format!(
-                        "type {kind:?} does not belong in docs/{shown} ({})",
+                        "{kind} does not belong in docs/{shown} ({})",
                         allowed.join(", ")
                     ),
                 );
@@ -828,6 +830,15 @@ mod tests {
         assert_eq!(
             found.keys().collect::<Vec<_>>(),
             bad.keys().collect::<Vec<_>>()
+        );
+        // The type is said as written, and a missing one in words
+        assert_eq!(
+            found["specs/item.md"],
+            "type \"Backlog Item\" does not belong in docs/specs (Spec, Guide)"
+        );
+        assert_eq!(
+            found["backlog/no-type.md"],
+            "no type does not belong in docs/backlog (Backlog Item, Guide)"
         );
     }
 

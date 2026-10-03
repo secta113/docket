@@ -1433,8 +1433,10 @@ fn a_knowledge_document_belongs_in_docs_knowledge() {
     let said = stdout(&out);
     assert_eq!(out.status.code(), Some(1), "{said}");
     assert!(
-        said.contains("every document is a known type in its place:\n  specs/api.md: type")
-            && said.contains("\"Knowledge\") does not belong in docs/specs (Spec, Guide)"),
+        said.contains(
+            "every document is a known type in its place:\n  specs/api.md: type \"Knowledge\" does not belong in \
+             docs/specs (Spec, Guide)"
+        ),
         "{said}"
     );
 }
