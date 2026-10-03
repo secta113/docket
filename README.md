@@ -1,6 +1,7 @@
 # Rotproof
 
-Rotproof keeps a project's structure from drifting while LLMs and people change it. It keeps two structures:
+Rotproof keeps a project's structure from drifting while LLMs and people change it, so that it does not rot. It keeps
+two structures:
 
 - **The layers:** which part of the code may import which (`handler`, `application`, `domain`, `infrastructure`,
   `utils`, and an optional `ui`). Code that cannot be split into these layers mixes responsibilities, so the layers
@@ -369,5 +370,8 @@ contributions.
 
 ## License
 
-Licensed under either of [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE), at your option. The crates the binary
-includes are under their own licenses, listed with their texts in [THIRD-PARTY-LICENSES.txt](THIRD-PARTY-LICENSES.txt).
+Licensed under either of [MIT](https://github.com/secta113/rotproof/blob/main/LICENSE-MIT) or
+[Apache-2.0](https://github.com/secta113/rotproof/blob/main/LICENSE-APACHE), at your option. The crates the binary
+includes are under their own licenses, listed with their texts in
+[THIRD-PARTY-LICENSES.txt](https://github.com/secta113/rotproof/blob/main/THIRD-PARTY-LICENSES.txt). The links are full
+URLs so that they work on PyPI, where this README is the project's page.
