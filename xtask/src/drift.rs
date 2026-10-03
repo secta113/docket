@@ -133,7 +133,7 @@ pub fn toolchain_problems(toolchain: &str, dockerfile: &str, ci: &str) -> Vec<St
 }
 
 /// Where the version the README installs (`pip install rotproof==<version>`) differs from the one in `Cargo.toml`. The
-/// README is the page on PyPI, so a version left behind would tell every reader to install an old rotproof. A README
+/// README is the page on PyPI, so a version left behind would tell every reader to install an old Rotproof. A README
 /// that names no version is a problem too.
 pub fn install_problems(cargo_toml: &str, readme: &str) -> Vec<String> {
     let mut in_package = false;

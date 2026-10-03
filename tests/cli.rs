@@ -123,7 +123,7 @@ fn each_broken_rule_fails_under_its_check() {
             "docs/backlog/index.md",
             "edited by hand\n".into(),
         ),
-        // The rules a project reads are the rules its rotproof checks
+        // The rules a project reads are the rules its Rotproof checks
         (
             "every generated file is up to date",
             "docs/backlog/rules.md",
@@ -190,7 +190,7 @@ fn each_broken_rule_fails_under_its_check() {
 
 #[test]
 fn a_name_in_another_case_is_missing() {
-    // Windows opens each of these under the name rotproof looks for; Linux and GitHub do not. Renamed in two steps, as
+    // Windows opens each of these under the name Rotproof looks for; Linux and GitHub do not. Renamed in two steps, as
     // a case-only rename is not a rename on Windows
     let cases = [
         (
@@ -205,7 +205,7 @@ fn a_name_in_another_case_is_missing() {
             ".config/Rotproof.toml",
             "the tree matches .config/rotproof.toml",
         ),
-        // Not in the floor: only the comparison with what rotproof writes sees it
+        // Not in the floor: only the comparison with what Rotproof writes sees it
         (
             "docs/backlog/index.md",
             "docs/backlog/Index.md",
@@ -225,7 +225,7 @@ fn a_name_in_another_case_is_missing() {
             "{to:?}: {}",
             stdout(&out)
         );
-        // Where rotproof names the file itself, it says what the disk has instead
+        // Where Rotproof names the file itself, it says what the disk has instead
         if check != "every generated file is up to date" {
             assert!(
                 stdout(&out).contains("is there"),
@@ -529,7 +529,7 @@ fn record(kind: &str, tag: &str) -> String {
 
 #[test]
 fn create_adds_the_fields_the_declaration_lacks() {
-    // A declaration an older rotproof wrote, before areas existed, with comments and values of the project's own
+    // A declaration an older Rotproof wrote, before areas existed, with comments and values of the project's own
     let older = "# Ours\nstack = \"python\"\nabsent = [\"ui\"]  # no UI here\n";
     let root = declared("stack = \"python\"\nareas = [\"a\"]\nabsent = [\"ui\"]\n");
     let r = root.path();
@@ -1030,7 +1030,7 @@ fn the_stacks_without_a_direction_check_say_so() {
         assert!(out.status.success(), "{stack}: {said}");
         assert!(
             said.contains(&format!(
-                "the direction of imports is not checked: rotproof does not read the imports of a {stack} project yet"
+                "the direction of imports is not checked: Rotproof does not read the imports of a {stack} project yet"
             )),
             "{stack}: {said}"
         );

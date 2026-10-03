@@ -116,7 +116,7 @@ pub fn problems(root: &Path) -> io::Result<Structure> {
             || path.contains(':')
             || path.split('/').any(|part| matches!(part, "" | "." | ".."))
         {
-            // `./scripts` would never equal the paths rotproof compares it with, and would switch nothing off silently
+            // `./scripts` would never equal the paths Rotproof compares it with, and would switch nothing off silently
             found.push(format!(
                 "unchecked lists {path:?}: write a path from the root, such as scripts or src/generated"
             ));

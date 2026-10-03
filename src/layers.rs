@@ -46,7 +46,7 @@ pub struct Table {
     pub levels: Vec<Entry>,
 }
 
-/// The table built into rotproof.
+/// The table built into Rotproof.
 pub fn table() -> Table {
     toml::from_str(TABLE).expect("layers/table.toml is valid: a test reads it")
 }
@@ -108,7 +108,7 @@ pub struct Place {
     pub files: Vec<(String, String)>,
 }
 
-/// The layout of a stack, or `None` when rotproof has none by that name.
+/// The layout of a stack, or `None` when Rotproof has none by that name.
 pub fn layout(stack: &str) -> Option<Layout> {
     STACKS
         .iter()
@@ -308,7 +308,7 @@ pub fn declaration(root: &Path) -> io::Result<Option<Result<Declaration, String>
         .map_err(|e| io::Error::new(e.kind(), format!("{DECLARATION}: {e}")))?;
     Ok(Some(toml::from_str(&text).map_err(|e| {
         let why = e.message().to_string();
-        // A field a newer rotproof requires: the upgrade is to run `rotproof create`, not to look the field up
+        // A field a newer Rotproof requires: the upgrade is to run `rotproof create`, not to look the field up
         match ADDED
             .iter()
             .find(|f| why == format!("missing field `{}`", f.name))
@@ -324,7 +324,7 @@ const AREAS_COMMENT: &str = "# The areas the records are grouped by, in this ord
                              # item and spec has exactly one of them in tags, and the index files group by them\n";
 
 /// A field the declaration requires that `rotproof create` adds when it is missing, so a declaration written by an
-/// older rotproof fails only until the upgrade runs `rotproof create`, never on its shape.
+/// older Rotproof fails only until the upgrade runs `rotproof create`, never on its shape.
 pub struct Added {
     pub name: &'static str,
     /// What it is, as `rotproof init` writes it above the field
@@ -353,7 +353,7 @@ pub fn known_stacks() -> Vec<&'static str> {
 /// The declaration `rotproof init` writes for a stack: every field with what it means, so the project edits it rather
 /// than looking it up.
 pub fn declaration_text(stack: &str) -> String {
-    let head = "# What rotproof keeps in this project. Edit it, then run `rotproof create` to make what is missing.\n\
+    let head = "# What Rotproof keeps in this project. Edit it, then run `rotproof create` to make what is missing.\n\
                 # `rotproof check` fails when the tree and this file differ, either way.\n";
     let stacks = known_stacks().join(" | ");
     let areas = format!("{AREAS_COMMENT}areas = []\n");
@@ -367,7 +367,7 @@ pub fn declaration_text(stack: &str) -> String {
         "{head}\n# {stacks}\nstack = \"{stack}\"\n\n{areas}\n\
          # Layers this project does not have, such as \"ui\" or \"ui.templates\". Delete the directory too\n\
          absent = []\n\n\
-         # Paths outside the layers that rotproof does not look into, such as \"scripts\" (helper scripts, generated\n\
+         # Paths outside the layers that Rotproof does not look into, such as \"scripts\" (helper scripts, generated\n\
          # or vendored code). A path that holds a layer, or does not exist, fails\n\
          unchecked = []\n"
     )

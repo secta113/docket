@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Runs the rotproof on PATH as a user runs it: release.yml calls it after installing a wheel on each platform, and in
+# Runs the Rotproof on PATH as a user runs it: release.yml calls it after installing a wheel on each platform, and in
 # the oldest Linux the Linux wheel's tag claims. A fresh project passes, and the same project with a forbidden import
 # fails with exit 1 (a crash exits otherwise)
 set -euo pipefail

@@ -1,4 +1,4 @@
-# The Python package: a wheel that carries only the rotproof binary (no Python code), installed with pip like ruff
+# The Python package: a wheel that carries only the Rotproof binary (no Python code), installed with pip like ruff
 [build-system]
 requires = ["maturin>=1.15,<2"]
 build-backend = "maturin"

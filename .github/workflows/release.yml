@@ -1,6 +1,6 @@
 name: Release
 
-# A pushed tag v<version> releases rotproof: the wheels to PyPI, and the wheels with an archive of the binary per
+# A pushed tag v<version> releases Rotproof: the wheels to PyPI, and the wheels with an archive of the binary per
 # platform to a GitHub Release. What is released is what was tested: the archives hold the binary taken out of the
 # tested wheel. Run by hand (workflow_dispatch), it builds, tests and packages everything and publishes nothing
 on:

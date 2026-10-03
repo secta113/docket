@@ -1,4 +1,4 @@
-//! Checks that `THIRD-PARTY-LICENSES.txt` is complete. The wheel and the binary link every crate rotproof depends on,
+//! Checks that `THIRD-PARTY-LICENSES.txt` is complete. The wheel and the binary link every crate Rotproof depends on,
 //! and their licenses (MIT, Apache-2.0 and others) require their notices to go with the binary. The file is generated
 //! by cargo-about, which takes minutes to build, so the checks come in two parts:
 //!
@@ -16,7 +16,7 @@ pub const FILE: &str = "THIRD-PARTY-LICENSES.txt";
 /// The workflow that installs cargo-about and checks the text
 pub const WORKFLOW: &str = ".github/workflows/licenses.yml";
 
-/// Fewer crates than this means the output of `cargo tree` was not read, not that rotproof lost its dependencies
+/// Fewer crates than this means the output of `cargo tree` was not read, not that Rotproof lost its dependencies
 pub const MIN_CRATES: usize = 10;
 
 /// `name version` of every crate in the output of `cargo tree --prefix none --format {p}`, except the first line,
@@ -135,7 +135,7 @@ libc v0.2.189 (*)
 ";
 
     const NOTICES: &str = "\
-Third-party licenses of rotproof
+Third-party licenses of Rotproof
 
 ================================================================================
 MIT License (MIT)

@@ -4,9 +4,9 @@
 //!   files. A present layer is the project's, and nothing in it is touched.
 //!   A repository that keeps records only (`stack = "none"`) has no layers to make.
 //! - The records skeleton: the directories of `docs/`, `docs/log.md` with its title when it does not exist, and the
-//!   generated files (the index files, `docs/backlog/rules.md` and `docs/specs/rules.md`), which rotproof rewrites.
+//!   generated files (the index files, `docs/backlog/rules.md` and `docs/specs/rules.md`), which Rotproof rewrites.
 //!
-//! - The fields the declaration lacks that rotproof requires (`ADDED` in `layers.rs`): an upgrade of rotproof that adds
+//! - The fields the declaration lacks that Rotproof requires (`ADDED` in `layers.rs`): an upgrade of Rotproof that adds
 //!   a field fails `rotproof check` until `rotproof create` runs, and then only on what the new rules find. The
 //!   comments and the values already in the declaration are kept, and a value that is present is never changed.
 //!
@@ -105,7 +105,7 @@ fn complete(root: &Path) -> Result<Option<(String, Vec<String>)>, String> {
         let value = match field.name {
             "areas" => record_tags(root)?,
             name => {
-                unreachable!("every field rotproof adds has a rule for its first value: {name}")
+                unreachable!("every field Rotproof adds has a rule for its first value: {name}")
             }
         };
         let mut array = Array::new();

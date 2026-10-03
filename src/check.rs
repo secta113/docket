@@ -11,7 +11,7 @@
 //! - **An epic closes after its parts**: a part's `epic` names another spec, one level deep, and no epic in
 //!   `docs/done/` has a part in `docs/specs/`.
 //! - **`docs/` is one OKF bundle**: every document is a known type in the directory for its type, a spec sits in the
-//!   directory for its status, every file rotproof generates (the index files and the rules) equals what
+//!   directory for its status, every file Rotproof generates (the index files and the rules) equals what
 //!   `rotproof index` writes, and no spec sits at the root.
 //! - **The log keeps the OKF log structure**: every second-level heading is a date, newest first, and the entries
 //!   are a flat list of list items under those dates.
@@ -369,9 +369,9 @@ pub fn concepts(docs: &Path) -> io::Result<Docs> {
     Ok(out)
 }
 
-/// Path -> why, for the files under `docs/` that a reader takes for part of the bundle and rotproof would not read.
+/// Path -> why, for the files under `docs/` that a reader takes for part of the bundle and Rotproof would not read.
 ///
-/// A reserved name (OKF 0.2, section 3.1) is read only where rotproof writes or reads it: an `index.md` in a directory
+/// A reserved name (OKF 0.2, section 3.1) is read only where Rotproof writes or reads it: an `index.md` in a directory
 /// that holds documents, and `log.md` at the root. Anywhere else, OKF says it follows the structure of an index or a
 /// log, and nothing would check that. A markdown file whose extension is not `.md` in lowercase (`.MD`) is shown by
 /// GitHub, but not read as a document, so a broken one would pass.
@@ -388,7 +388,7 @@ pub fn unread(docs: &Path) -> io::Result<BTreeMap<String, String>> {
         if !read {
             bad.insert(
                 path,
-                "a reserved name outside the places rotproof writes and reads (index.md in docs/ and in each directory \
+                "a reserved name outside the places Rotproof writes and reads (index.md in docs/ and in each directory \
                  of documents, log.md in docs/)"
                     .into(),
             );
@@ -685,7 +685,7 @@ mod tests {
     #[test]
     fn a_file_rotproof_would_not_read_is_caught() {
         let bad = [
-            // Reserved names where rotproof neither writes nor reads them
+            // Reserved names where Rotproof neither writes nor reads them
             "extra/index.md",
             "specs/deeper/index.md",
             "backlog/log.md",

@@ -1,7 +1,7 @@
 //! The frontmatter of each record type: backlog items, guides and specs.
 //!
 //! OKF lets a producer add any key, and tells readers not to reject one they do not know. So an unknown field passes
-//! as an extension, unless it looks like a misspelling of a field the type reads (OKF's or rotproof's): that one fails,
+//! as an extension, unless it looks like a misspelling of a field the type reads (OKF's or Rotproof's): that one fails,
 //! as a misspelled optional field would otherwise be silently dropped. Every field OKF defines for a concept (sections 4 and 5)
 //! passes as OKF writes it, so a document another OKF tool wrote correctly does not fail. The fields of an Attested
 //! Computation (section 10) do not, as no such document belongs in the records.
@@ -1062,7 +1062,7 @@ Not yet.
                 "unknown field",
                 good("status: stable", "status: stable\nstatu: stable"),
             ),
-            // Misspellings of a field OKF defines, and of one rotproof adds, in the forms they take
+            // Misspellings of a field OKF defines, and of one Rotproof adds, in the forms they take
             (
                 "a misspelled optional field",
                 good(
@@ -1093,7 +1093,7 @@ Not yet.
                 good("status: stable", "status: stable\nTitle: x"),
             ),
             (
-                "a misspelled field rotproof adds",
+                "a misspelled field Rotproof adds",
                 good(
                     "status: stable",
                     "status: stable\ndeadlin: until the next deploy",

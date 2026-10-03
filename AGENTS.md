@@ -1,6 +1,6 @@
-# AGENTS.md (rotproof)
+# AGENTS.md (Rotproof)
 
-This file holds **the map of this repository** and **short rules that apply to every change**. What rotproof checks,
+This file holds **the map of this repository** and **short rules that apply to every change**. What Rotproof checks,
 and why, is in `README.md`.
 
 ## Map
@@ -9,19 +9,19 @@ and why, is in `README.md`.
 |---|---|
 | `src/` | The tool, one module per concern (below) |
 | `layers/` | The layer definitions, built into the binary: `table.toml` (what the layers are, in every stack) and one layout per stack (`python.toml`, `typescript.toml`, `rust.toml`: where each layer lives and the files that make it) |
-| `records/` | The records skeleton, built into the binary: `rules.md` and `spec-rules.md` (the backlog rules and the spec rules rotproof writes into every project), and `log.md` (the log `rotproof create` starts) |
+| `records/` | The records skeleton, built into the binary: `rules.md` and `spec-rules.md` (the backlog rules and the spec rules Rotproof writes into every project), and `log.md` (the log `rotproof create` starts) |
 | `tests/` | Tests that run the built binary as a user runs it (`cli.rs`) |
 | `xtask/` | The CI entry point (`cargo xtask ci`), and `cargo xtask licenses`, which writes `THIRD-PARTY-LICENSES.txt` (`--check`: checks it) |
 | `.cargo/` | The `cargo xtask` alias |
 | `.github/` | GitHub Actions: `ci.yml` runs `cargo xtask ci` in the container, and builds and installs the wheels on Linux and Windows; `licenses.yml` checks `THIRD-PARTY-LICENSES.txt` with cargo-about; `release.yml` releases a pushed tag to PyPI and GitHub Releases, after running each wheel through `smoke.sh` |
-| `Cargo.toml` | The package, and the one place that names rotproof's version (maturin takes the wheel version from it) |
+| `Cargo.toml` | The package, and the one place that names Rotproof's version (maturin takes the wheel version from it) |
 | `rust-toolchain.toml` | The one place that names the toolchain. The Dockerfile and CI install from it |
 | `Dockerfile`, `compose.yaml` | The development container: the Linux of CI, with the packaging tools and cargo-about |
 | `pyproject.toml` | The pip package: a wheel that carries only the binary and the licenses (maturin, `bindings = "bin"`) |
 | `requirements-build.txt` | The one place that names the packaging tools (maturin, cargo-xwin). The Dockerfile and CI install from it |
-| `THIRD-PARTY-LICENSES.txt` | The licenses of every crate the binary links, which go with the binary: in the wheel next to rotproof's own. Generated, never edited by hand |
-| `about.toml`, `about.hbs` | What cargo-about writes `THIRD-PARTY-LICENSES.txt` from: the licenses rotproof may ship, and the file's template |
-| `README.md` | What rotproof checks, how to use it, and how to build it |
+| `THIRD-PARTY-LICENSES.txt` | The licenses of every crate the binary links, which go with the binary: in the wheel next to Rotproof's own. Generated, never edited by hand |
+| `about.toml`, `about.hbs` | What cargo-about writes `THIRD-PARTY-LICENSES.txt` from: the licenses Rotproof may ship, and the file's template |
+| `README.md` | What Rotproof checks, how to use it, and how to build it |
 | `LICENSE-MIT`, `LICENSE-APACHE` | The license: MIT OR Apache-2.0 |
 
 Also tracked, as in most repositories: `.gitattributes`, `.gitignore`, `Cargo.lock`, `AGENTS.md`, and `CLAUDE.md`
@@ -37,23 +37,25 @@ Also tracked, as in most repositories: `.gitattributes`, `.gitignore`, `Cargo.lo
 | `direction.rs` | The direction check: every layer imports only what `layers/table.toml` allows (Python) |
 | `init.rs` | `rotproof init`: writing a project's declaration, once |
 | `create.rs` | `rotproof create`: making the layers and the records skeleton a project lacks |
-| `bundle.rs` | Reading `docs/` as one OKF bundle, and the files rotproof generates in it (the index files and the rules) |
+| `bundle.rs` | Reading `docs/` as one OKF bundle, and the files Rotproof generates in it (the index files and the rules) |
 | `schema.rs` | The frontmatter of each document type |
 | `frontmatter.rs` | Splitting a document into frontmatter and the sections of its body |
 | `markdown.rs` | What GitHub renders as text, headings and their anchors as GitHub computes them, and links |
 | `source.rs` | Reading files, and the paths in messages |
 
-## How this repository differs from what rotproof keeps
+## How this repository differs from what Rotproof keeps
 
-- **No `docs/` here.** rotproof's own backlog, specs and log are kept outside this repository.
+- **No `docs/` here.** Rotproof's own backlog, specs and log are kept outside this repository.
 - **No layers, and no `.config/rotproof.toml`.** The modules are split by concern, not into `handler`, `application`,
-  `domain` and the other layers that rotproof keeps in the projects that use it (README).
+  `domain` and the other layers that Rotproof keeps in the projects that use it (README).
 
 ## Rules for every change
 
 - **A layer or a stack changes in `layers/`, not in code.** The table says what the layers are once; a layout says
   only where they live in one stack. The tests read every definition, so a layout that names a layer the table lacks
   fails.
+- **Write Rotproof where prose names the tool, and `rotproof` for the command, the package, the crate and file
+  names,** as Ruff and `ruff` are written. A sentence that starts with the command still writes it in backticks.
 
 - **Run CI with `cargo xtask ci`, on the host or in the container (`docker compose run --rm dev cargo xtask ci`).** The
   container is the Linux of CI and needs only Docker. On Windows, the host needs Visual Studio's C++ tools and the
@@ -71,10 +73,10 @@ Also tracked, as in most repositories: `.gitattributes`, `.gitignore`, `Cargo.lo
   version may write another text. After changing it, run `cargo xtask licenses`.
 - **`ruff_python_parser` and `ruff_python_ast` are pinned to one exact version, and move together.** They are
   internal crates of Ruff, whose API changes between any two versions. Bump them by hand when the toolchain changes
-  (a new Ruff may need a newer Rust) and when Python gains syntax rotproof fails to read.
+  (a new Ruff may need a newer Rust) and when Python gains syntax Rotproof fails to read.
 - **Try a wheel as a user gets it:** build it (README) and `pip install` it into a fresh venv, outside the build tree.
 - **A change that can fail records that passed before (a new rule, a stricter rule) raises the minor version** while
-  rotproof is `0.x`. Projects pin the exact version, so they take the change in a commit of their own.
+  Rotproof is `0.x`. Projects pin the exact version, so they take the change in a commit of their own.
 - **Raise the version in `Cargo.toml` and the `pip install rotproof==<version>` in `README.md` together;** `cargo xtask
   ci` fails while they differ (the README is the page on PyPI). Release by pushing the tag `v<version>` of that
   commit. Before the tag, `gh workflow run release.yml` builds and tests the release without publishing it.

@@ -21,7 +21,7 @@ pub const RESERVED: [&str; 2] = ["index.md", "log.md"];
 /// The notice at the top of every generated index. An HTML comment, so OKF readers do not see it
 pub const GENERATED: &str = "<!-- Generated from the frontmatter by `rotproof index`. Do not edit: `rotproof check` \
                              fails when this file differs from what `rotproof index` writes. -->";
-/// The backlog rules. rotproof writes them like an index file, so the rules a project reads are the rules its rotproof
+/// The backlog rules. Rotproof writes them like an index file, so the rules a project reads are the rules its Rotproof
 /// checks
 pub const RULES: &str = include_str!("../records/rules.md");
 /// The spec rules, written like the backlog rules
@@ -280,7 +280,7 @@ impl Bundle {
         Ok(docs)
     }
 
-    /// Every file rotproof generates in the bundle (the index files and the backlog rules) -> what it should contain
+    /// Every file Rotproof generates in the bundle (the index files and the backlog rules) -> what it should contain
     /// now, and the documents left out of the index files.
     pub fn expected(&self) -> io::Result<(Vec<(PathBuf, String)>, Problems)> {
         // The rules as they are about to be written, so the backlog index lists them on the run that writes them
@@ -312,7 +312,7 @@ impl Bundle {
     }
 
     /// Every spec of `docs/specs/` and `docs/done/`, checked one by one and against each other. The spec rules are read
-    /// as rotproof writes them, so the index lists them on the run that writes them.
+    /// as Rotproof writes them, so the index lists them on the run that writes them.
     pub fn read_specs(&self) -> io::Result<Specs> {
         let mut folders = SPEC_FOLDERS
             .iter()
