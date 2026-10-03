@@ -211,10 +211,10 @@ deadline: until the next deploy
 stale_after: 2027-01-01T00:00:00+09:00   # optional: when to measure the state again
 ---
 
+# Resolution    (only when closed, and then first)
 # Trigger
 # State
 # Details
-# Resolution    (only when closed)
 ```
 
 ## What `rotproof check` checks
@@ -250,7 +250,7 @@ stale_after: 2027-01-01T00:00:00+09:00   # optional: when to measure the state a
   message says what the disk has.
 - **The areas are distinct headings:** none is empty, has a space at either end or a line break, and no two differ only in case.
 - **Every backlog item keeps the format:** the fields above with their types, and non-empty Trigger, State and Details
-  (and Resolution when closed). A field Rotproof does not know passes as an extension, as OKF allows, unless it looks
+  (and Resolution when closed, as the first heading). A field Rotproof does not know passes as an extension, as OKF allows, unless it looks
   like a misspelling of a field the document type has (`stale_afer`, `staleAfter`, `Title`), or is a field only
   another type has (a backlog item's `deadline` on a spec, a spec's `epic` on a backlog item): those fail, in every
   document type, as a misspelled optional field would otherwise be silently dropped. A deadline is an event or a reason, never only a date
@@ -272,7 +272,7 @@ stale_after: 2027-01-01T00:00:00+09:00   # optional: when to measure the state a
   (`render_index()`) or a dotted path (`Bundle.render`); when it names nothing, the message says which name to write
   or lists the names the file defines.
 - **Every spec keeps the format:** `title`, `description`, `status` and exactly one declared area in `tags`, and a
-  non-empty `# Resolution` once it is closed. `epic`, when present, is the slug of another spec in `docs/specs/` (not
+  non-empty `# Resolution` as the first heading once it is closed. `epic`, when present, is the slug of another spec in `docs/specs/` (not
   a path, not a backlog item or a guide, not the spec itself), and that spec has no `epic` of its own: one level only.
   A spec that breaks one of these is left out of the index files.
 - **An epic closes after its parts:** no closed epic has an open part. A part that is dropped closes as dropped, as

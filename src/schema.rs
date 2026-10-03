@@ -14,7 +14,7 @@ use regex::Regex;
 use yaml_rust2::Yaml;
 use yaml_rust2::yaml::Hash;
 
-use crate::frontmatter::{Sections, split};
+use crate::frontmatter::{Sections, first_heading, split};
 
 /// A datetime with a time zone, as OKF writes every timestamp.
 pub type Time = DateTime<FixedOffset>;
@@ -199,7 +199,38 @@ pub fn backlog_doc(text: &str) -> Result<BacklogDoc, String> {
     if !empty.is_empty() {
         return Err(format!("body headings missing or empty: {empty:?}"));
     }
+    if item.status == Status::Deprecated {
+        resolution_first(text, "item")?;
+    }
     Ok(BacklogDoc::Item(item, sections))
+}
+
+/// For tests: a record closed as it should be, `status: deprecated` and `# Resolution` as the first heading of its body.
+#[cfg(test)]
+pub(crate) fn closed_record(text: &str, resolution: &str) -> String {
+    let text = text.replace("status: stable", "status: deprecated");
+    let end = text[4..]
+        .find("\n---\n")
+        .expect("a record with frontmatter")
+        + 4
+        + "\n---\n".len();
+    format!(
+        "{}\n# {CLOSED_SECTION}\n\n{resolution}\n{}",
+        &text[..end],
+        &text[end..]
+    )
+}
+
+/// A closed record opens with `# Resolution`, so a reader who opens it from a link, or an agent reading from the top,
+/// meets the closing before anything that reads as current.
+fn resolution_first(text: &str, kind: &str) -> Result<(), String> {
+    match first_heading(text) {
+        Some(first) if first == CLOSED_SECTION => Ok(()),
+        first => Err(format!(
+            "a closed {kind} opens with # {CLOSED_SECTION}, before every other heading (its first heading is {})",
+            first.map_or("none".into(), |first| format!("# {first}"))
+        )),
+    }
 }
 
 /// A guide, or why it breaks the format. `None` when the document's type is not `Guide`.
@@ -242,6 +273,9 @@ pub fn spec(folder: &str, text: &str) -> Result<(Spec, Sections), String> {
         return Err(format!(
             "a closed spec needs a non-empty # {CLOSED_SECTION}"
         ));
+    }
+    if spec.status == Status::Deprecated {
+        resolution_first(text, "spec")?;
     }
     Ok((spec, sections))
 }
@@ -753,6 +787,28 @@ Not yet.
     }
 
     #[test]
+    fn a_closed_item_opens_with_its_resolution() {
+        let closed = closed_record(GOOD, "Fixed.");
+        assert!(
+            backlog_doc(&closed).is_ok(),
+            "{:?}",
+            backlog_doc(&closed).err()
+        );
+        let at_the_end =
+            good("status: stable", "status: deprecated") + "\n# Resolution\n\nFixed.\n";
+        assert_eq!(
+            backlog_doc(&at_the_end).err(),
+            Some(
+                "a closed item opens with # Resolution, before every other heading (its first heading is # Trigger)"
+                    .into()
+            )
+        );
+        // A heading only in a comment does not count: the reader sees # Trigger first
+        let hidden = at_the_end.replacen("\n# Trigger", "\n<!--\n# Resolution\n-->\n# Trigger", 1);
+        assert!(backlog_doc(&hidden).is_err());
+    }
+
+    #[test]
     fn each_type_s_own_fields_are_found_from_the_readers() {
         assert_eq!(
             *OWN_FIELDS,
@@ -1237,12 +1293,21 @@ Something.
             spec("specs", &part).map(|(spec, _)| spec.epic),
             Ok(Some("big-work".into()))
         );
-        let closed =
-            SPEC.replace("status: stable", "status: deprecated") + "\n# Resolution\n\nDone.\n";
+        let closed = closed_record(SPEC, "Done.");
         assert!(
             spec("specs", &closed).is_ok(),
             "{:?}",
             spec("specs", &closed).err()
+        );
+        // The Resolution at the end, as it was written before it had to come first
+        let at_the_end =
+            SPEC.replace("status: stable", "status: deprecated") + "\n# Resolution\n\nDone.\n";
+        assert_eq!(
+            spec("specs", &at_the_end).err(),
+            Some(
+                "a closed spec opens with # Resolution, before every other heading (its first heading is # Goals)"
+                    .into()
+            )
         );
     }
 

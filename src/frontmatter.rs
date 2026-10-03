@@ -51,6 +51,18 @@ pub fn split(text: &str) -> Result<(Hash, Sections), String> {
     Ok((meta, sections))
 }
 
+/// The first `# heading` of the body, as a reader sees the rendered page: one inside a comment or a code block does not
+/// count. `None` when the text has no frontmatter, or its body no heading.
+pub fn first_heading(text: &str) -> Option<String> {
+    let text = text.replace("\r\n", "\n");
+    let caps = FRONT_MATTER.captures(&text)?;
+    let body = visible(caps.get(2).map_or("", |body| body.as_str()));
+    body.split('\n').find_map(|line| match heading(line) {
+        Some((1, heading)) => Some(heading.to_string()),
+        _ => None,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -87,6 +99,14 @@ mod tests {
         let (meta, sections) = split("---\ntype: X\n---").unwrap();
         assert_eq!(meta[&Yaml::String("type".into())], Yaml::String("X".into()));
         assert!(sections.is_empty());
+    }
+
+    #[test]
+    fn the_first_heading_is_the_first_one_shown() {
+        let text = "---\ntype: X\n---\n<!--\n# Hidden\n-->\n```\n# Code\n```\n## Sub\n# Resolution\nx\n# Goals\n";
+        assert_eq!(first_heading(text).as_deref(), Some("Resolution"));
+        assert_eq!(first_heading("---\ntype: X\n---\ntext only\n"), None);
+        assert_eq!(first_heading("# no frontmatter\n"), None);
     }
 
     #[test]

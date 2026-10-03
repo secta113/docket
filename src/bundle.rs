@@ -666,8 +666,7 @@ Not yet. Measured by hand.
 
     #[test]
     fn a_closed_item_leaves_the_open_list() {
-        let closed =
-            GOOD.replace("status: stable", "status: deprecated") + "\n# Resolution\n\nFixed.\n";
+        let closed = crate::schema::closed_record(GOOD, "Fixed.");
         let index = render_backlog(
             &parsed(&[("closed.md", closed)]).items,
             &BTreeMap::new(),

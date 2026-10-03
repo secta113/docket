@@ -27,14 +27,15 @@ Everything else goes in the body.
 | `status` | `draft` (not agreed yet), `stable` (agreed) or `deprecated` (closed) |
 | `epic` | Optional. The slug of the spec this one is a part of. See "Epics" |
 
-The body is free, except that a closed spec has `# Resolution`.
+The body is free, except that a closed spec opens with `# Resolution`: its first heading.
 
 # Writing and closing
 
 - **A spec describes the current state.** When it disagrees with the implementation, fix it in the same commit. A
   rejected design left looking current is read as correct by the next reader.
-- **Closing a spec leaves it where it is.** Set `status: deprecated` and write `# Resolution`: implemented or dropped,
-  and how the implementation differs from the spec. From then on it is history. The index lists it under `# Closed`.
+- **Closing a spec leaves it where it is.** Set `status: deprecated` and write `# Resolution` as its first heading:
+  implemented or dropped, and how the implementation differs from the spec. A reader who opens it from a link meets
+  the closing before anything that reads as current. From then on it is history. The index lists it under `# Closed`.
   A spec never moves: a moved spec breaks every link to it, and rewriting the links puts lines that have nothing to do
   with the closing into its review.
 - **Links between documents are markdown links.**

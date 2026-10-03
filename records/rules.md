@@ -35,7 +35,7 @@ Body headings:
 | `# Trigger` | The event that makes the item ready to act on |
 | `# State` | How far the trigger has progressed: the measured value and how to measure it again |
 | `# Details` | Where the history is (see below) |
-| `# Resolution` | Only when closed. How it was closed: fixed, merged into a spec, nothing found, or dropped at its deadline |
+| `# Resolution` | Only when closed, and then the first heading. How it was closed: fixed, merged into a spec, nothing found, or dropped at its deadline |
 
 # Rules
 
@@ -53,9 +53,10 @@ Body headings:
   dates, so a link to a log entry points to its day and names the entry in its text
   (`[log.md: <task name>](/log.md#2026-10-01)`). A link to a Python file names the function or class in its text
   (``[`render_index`](../../src/bundle.py)``). The check fails when a link in `# Details` does not resolve.
-- **Closed items stay where they are.** Set `status: deprecated` and write `# Resolution`; the index lists the item
-  under `# Closed`. Deleting or moving an item breaks every link to it, and rewriting the links puts lines that have
-  nothing to do with the closing into its review.
+- **Closed items stay where they are.** Set `status: deprecated` and write `# Resolution` as the first heading, so a
+  reader who opens the item from a link meets the closing first; the index lists the item under `# Closed`. Deleting
+  or moving an item breaks every link to it, and rewriting the links puts lines that have nothing to do with the
+  closing into its review.
 - **"Next time someone touches X" is not a trigger anyone will see.** People who touch X do not open the backlog.
   Prefer a moment when the backlog is opened anyway, such as starting a piece of work or a deploy. If the trigger can
   only be X, search `docs/backlog/` for X before committing a change to X.
