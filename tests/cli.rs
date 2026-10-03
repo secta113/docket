@@ -475,6 +475,55 @@ fn create_makes_each_stack_once_and_check_passes_on_it() {
 }
 
 #[test]
+fn the_guide_is_rotproofs_and_check_fails_until_create_rewrites_it() {
+    for stack in ["python", "typescript", "rust", "none"] {
+        let root = declared(&format!("stack = \"{stack}\"\nareas = [\"a\"]\n"));
+        let arg = root_arg(root.path());
+        assert!(run(&["--root", &arg, "create"]).status.success());
+        let guide = root.path().join(".rotproof/AGENTS.md");
+        let written = fs::read_to_string(&guide).unwrap();
+        assert!(
+            written.contains(&format!("stack \"{stack}\"")),
+            "{stack}: {written}"
+        );
+        assert_eq!(
+            written.contains("## The layers"),
+            stack != "none",
+            "{stack}: {written}"
+        );
+        for (edit, says) in [
+            (
+                Some("edited by hand\n"),
+                "out of date, run `rotproof create`",
+            ),
+            (None, "missing, run `rotproof create`"),
+        ] {
+            match edit {
+                Some(text) => fs::write(&guide, text).unwrap(),
+                None => fs::remove_file(&guide).unwrap(),
+            }
+            let out = run(&["--root", &arg, "check"]);
+            assert_eq!(out.status.code(), Some(1), "{stack}: {}", stdout(&out));
+            assert!(
+                stdout(&out).contains(&format!(
+                    "Rotproof's guide is up to date:\n  {says}: .rotproof/AGENTS.md"
+                )),
+                "{stack}: {}",
+                stdout(&out)
+            );
+            let out = run(&["--root", &arg, "create"]);
+            assert!(
+                stdout(&out).contains("wrote .rotproof/AGENTS.md"),
+                "{stack}: {}",
+                stdout(&out)
+            );
+            assert_eq!(fs::read_to_string(&guide).unwrap(), written);
+            assert!(run(&["--root", &arg, "check"]).status.success());
+        }
+    }
+}
+
+#[test]
 fn create_respects_absent_and_leaves_what_it_does_not_own() {
     let root = declared(
         "stack = \"python\"\nareas = [\"a\"]\nabsent = [\"ui.templates\", \"infrastructure\"]\n",
@@ -1165,6 +1214,7 @@ fn a_repository_of_records_only_makes_and_checks_only_docs() {
     assert!(
         made.iter().all(|path| path.starts_with("docs/")
             || path.starts_with(".config/")
+            || path == ".rotproof/AGENTS.md"
             || path == ".claude/settings.json"
             || path == ".gemini/settings.json"),
         "{made:?}"

@@ -6,6 +6,8 @@
 //! - The records skeleton: the directories of `docs/`, `docs/log.md` with its title when it does not exist, and the
 //!   generated files (the index files and the rules of `docs/backlog/`, `docs/specs/` and `docs/knowledge/`), which
 //!   Rotproof rewrites.
+//! - Rotproof's guide, `.rotproof/AGENTS.md` (`project.rs`), which Rotproof rewrites: the rules it keeps in the stack,
+//!   from the version that runs.
 //! - `.claude/settings.json` and `.gemini/settings.json` with the hook that runs `rotproof stop-hook` when the agent
 //!   stops (`hook.rs`), each when it does not exist. A project that has one already adds the hook to it by hand.
 //!
@@ -28,6 +30,7 @@ use crate::bundle::{Bundle, LOG};
 use crate::frontmatter::split;
 use crate::hook::SETTINGS;
 use crate::layers::{ADDED, DECLARATION, Declaration, Declared, MISSING, declaration};
+use crate::project::{GUIDE, guide};
 use crate::source::{exactly, read_source, relative_path};
 
 /// What `rotproof create` did.
@@ -78,6 +81,10 @@ pub fn create(root: &Path) -> Result<Made, String> {
     }
     if !bundle.docs.join("log.md").exists() {
         write(root, "docs/log.md", LOG, &mut made)?;
+    }
+    let guide = guide(&declared.declaration.stack, declared.layout.as_ref());
+    if read_source(&root.join(GUIDE)).ok().as_ref() != Some(&guide) {
+        write(root, GUIDE, &guide, &mut made)?;
     }
     for (path, text) in SETTINGS {
         if !root.join(path).exists() {

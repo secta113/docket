@@ -63,7 +63,7 @@ cargo build --release   # the binary is target/release/rotproof (rotproof.exe on
 
 ```sh
 rotproof --root <repository> init --stack python  # write .config/rotproof.toml, once
-rotproof --root <repository> create  # make the layers .config/rotproof.toml declares, and the records skeleton
+rotproof --root <repository> create  # make the layers .config/rotproof.toml declares, the records skeleton and the guide
 rotproof --root <repository> check   # check the layers and the records; exits 1 when a rule is broken
 rotproof --root <repository> index   # write every generated file in docs/ (the index files and the rules)
 rotproof stop-hook                   # run by Claude Code or Gemini CLI when the agent stops (see "The stop hook")
@@ -78,7 +78,8 @@ anything is made, and it never overwrites a declaration that exists. Then run `r
 
 Run `rotproof create` when a project starts, and again after you change `.config/rotproof.toml` on purpose. It makes
 only what is missing: a layer that is neither present nor declared absent, `docs/log.md`, `.claude/settings.json` and
-`.gemini/settings.json` when there are none, and the files Rotproof generates. It never overwrites a file it does not
+`.gemini/settings.json` when there are none, and the files Rotproof generates (`.rotproof/AGENTS.md`, and the index
+files and rules in `docs/`). It never overwrites a file it does not
 generate, and never moves or deletes one. Nothing runs it on its own, so a layer removed by mistake fails `rotproof
 check` instead of coming back.
 
@@ -87,13 +88,18 @@ fails and says so, and `rotproof create` adds the field under a comment that say
 came from (`areas` gets the tags the records use, sorted by name), keeping every comment and value already there. A
 value that is present is never changed, so an upgrade fails only on what the new rules find.
 
-The index files only help if your agent reads them. Point it at them in your `AGENTS.md` (or whatever file your agent
-reads first), for example:
+Among the files Rotproof generates is `.rotproof/AGENTS.md`: the rules Rotproof keeps, written for the project's
+stack. It says how to run Rotproof, lists the layers with where each lives and what it may import (from
+`layers/table.toml`), and gives the rules of the records, starting with reading the index files before work. It names
+the Rotproof version that wrote it, so after an upgrade `rotproof check` fails until `rotproof create` has rewritten
+it. Edited by hand, it fails too: a project's own rules go in its own `AGENTS.md`.
+
+The guide only helps if your agent reads it. Point at it from your `AGENTS.md` (or whatever file your agent reads
+first), and import it in `CLAUDE.md` for Claude Code:
 
 ```markdown
-- **Before starting work, read `docs/backlog/index.md`, `docs/specs/index.md` and `docs/knowledge/index.md`, and
-  open only the items, specs and documents that concern the work.** Read the closed specs (under `# Closed` in
-  `docs/specs/index.md`) and `docs/log.md` when you need to know why something was decided.
+@AGENTS.md
+@.rotproof/AGENTS.md
 ```
 
 ## The stop hook

@@ -6,6 +6,8 @@
 //!   direction was not checked.
 //! - **No comment holds `TODO`, `FIXME`, `XXX`, `HACK` or `NOTE`** (`markers.rs`), for `python`: work left to do
 //!   belongs in the backlog, where it is listed and closed.
+//! - **Rotproof's guide is up to date**: `.rotproof/AGENTS.md` equals what `rotproof create` writes for the stack with
+//!   this version of Rotproof (`project.rs`).
 //! - **The backlog works as a backlog**: every document keeps the format, every link in `# Details` resolves, and every
 //!   backlog item the log points to exists.
 //! - **Every record has one declared area**: the areas in `.config/rotproof.toml` are distinct headings, and the one
@@ -35,6 +37,7 @@ use crate::bundle::{Bundle, Docs, RESERVED, backlog};
 use crate::frontmatter::split;
 use crate::layers::{DECLARATION, area_problems, areas};
 use crate::markdown::{broken, heading, links, visible};
+use crate::project::GUIDE;
 use crate::source::{exactly, read_source, relative_path};
 
 /// Directory (relative to docs/, "" for the root) -> the document types allowed in it
@@ -114,6 +117,23 @@ pub fn check(root: &Path) -> io::Result<Report> {
             detail,
         }));
         skipped.extend(markers.skipped);
+        let guide = crate::project::guide(&declared.declaration.stack, declared.layout.as_ref());
+        let found = exactly(root, GUIDE)
+            .ok()
+            .and_then(|path| read_source(&path).ok());
+        if found.as_ref() != Some(&guide) {
+            findings.push(Finding {
+                check: "Rotproof's guide is up to date".into(),
+                detail: format!(
+                    "{}, run `rotproof create`: {GUIDE}",
+                    if found.is_some() {
+                        "out of date"
+                    } else {
+                        "missing"
+                    }
+                ),
+            });
+        }
     }
     findings.extend(records(root)?);
     Ok(Report {
