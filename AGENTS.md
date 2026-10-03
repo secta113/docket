@@ -29,13 +29,14 @@ Also tracked, as in most repositories: `.gitattributes`, `.gitignore`, `Cargo.lo
 
 | Module of `src/` | Content |
 |---|---|
-| `main.rs` | The command line: `rotproof init`, `rotproof create`, `rotproof check` and `rotproof index` |
+| `main.rs` | The command line: `rotproof init`, `rotproof create`, `rotproof check`, `rotproof index` and `rotproof stop-hook` |
 | `lib.rs` | The library the command line calls |
 | `check.rs` | Every rule `rotproof check` runs, each with its floor |
 | `layers.rs` | Reading the layer definitions in `layers/` and a project's `.config/rotproof.toml` |
 | `structure.rs` | The structure check: the tree agrees with `.config/rotproof.toml`, either way |
 | `direction.rs` | The direction check: every layer imports only what `layers/table.toml` allows (Python) |
 | `markers.rs` | The marker check: no comment in the code holds `TODO`, `FIXME`, `XXX`, `HACK` or `NOTE` (Python) |
+| `hook.rs` | `rotproof stop-hook`, the hook Claude Code and Gemini CLI run when the agent stops, and the settings files that `rotproof create` writes for it |
 | `init.rs` | `rotproof init`: writing a project's declaration, once |
 | `create.rs` | `rotproof create`: making the layers and the records skeleton a project lacks |
 | `bundle.rs` | Reading `docs/` as one OKF bundle, and the files Rotproof generates in it (the index files and the rules) |

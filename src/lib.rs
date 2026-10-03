@@ -5,6 +5,7 @@ pub mod check;
 pub mod create;
 pub mod direction;
 pub mod frontmatter;
+pub mod hook;
 pub mod init;
 pub mod layers;
 pub mod markdown;

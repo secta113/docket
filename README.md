@@ -61,6 +61,7 @@ rotproof --root <repository> init --stack python  # write .config/rotproof.toml,
 rotproof --root <repository> create  # make the layers .config/rotproof.toml declares, and the records skeleton
 rotproof --root <repository> check   # check the layers and the records; exits 1 when a rule is broken
 rotproof --root <repository> index   # write every generated file in docs/ (the index files and the rules)
+rotproof stop-hook                   # run by Claude Code or Gemini CLI when the agent stops (see "The stop hook")
 ```
 
 `--root` defaults to the current directory. The declaration is read from `<repository>/.config/rotproof.toml`, and the
@@ -71,9 +72,10 @@ that keeps records only). It writes only the declaration, so you declare in `abs
 anything is made, and it never overwrites a declaration that exists. Then run `rotproof create`.
 
 Run `rotproof create` when a project starts, and again after you change `.config/rotproof.toml` on purpose. It makes
-only what is missing: a layer that is neither present nor declared absent, `docs/log.md` when there is none, and the
-files Rotproof generates. It never overwrites a file it does not generate, and never moves or deletes one. Nothing runs
-it on its own, so a layer removed by mistake fails `rotproof check` instead of coming back.
+only what is missing: a layer that is neither present nor declared absent, `docs/log.md`, `.claude/settings.json` and
+`.gemini/settings.json` when there are none, and the files Rotproof generates. It never overwrites a file it does not
+generate, and never moves or deletes one. Nothing runs it on its own, so a layer removed by mistake fails `rotproof
+check` instead of coming back.
 
 Run it also after upgrading Rotproof. When a newer Rotproof requires a field the declaration lacks, `rotproof check`
 fails and says so, and `rotproof create` adds the field under a comment that says what it is and where its first value
@@ -88,6 +90,35 @@ reads first), for example:
   that concern the work.** Read `docs/done/index.md` and `docs/log.md` when you need to know why something was
   decided.
 ```
+
+## The stop hook
+
+An agent's findings are lost when it reports them and stops: "not checked", "out of scope" in its last message, and
+nothing in the backlog. `rotproof stop-hook` is the hook an agent runs when it stops, and reads that last message:
+[Claude Code's `Stop`](https://code.claude.com/docs/en/hooks) and
+[Gemini CLI's `AfterAgent`](https://geminicli.com/docs/hooks/reference/), told apart by the event in their input. When
+the message holds a phrase that leaves something open and `git status` shows no change in `docs/`, the hook sends the
+agent back once, asking it to record the finding or to say in one line where it already is. While the agent is
+continuing because of a stop hook, the hook lets it stop, so it never loops. The phrases are built in (Japanese and
+English); the agent decides what each one meant.
+
+`rotproof create` writes `.claude/settings.json` and `.gemini/settings.json` with the hook, each when it does not
+exist. A project that has one adds the hook to it:
+
+```json
+{
+  "hooks": {
+    "Stop": [{ "hooks": [{ "type": "command", "command": "rotproof stop-hook" }] }]
+  }
+}
+```
+
+In `.gemini/settings.json` the event is `AfterAgent` instead of `Stop`.
+
+`rotproof` has to be on the `PATH` the agent runs hooks with (for a venv, start the agent with the venv active). The
+project is the nearest directory upwards that holds `.config/rotproof.toml`; outside one, the hook says nothing. A
+hook that fails (not a git repository, an input from another hook) exits 1, which both agents show without keeping
+the agent from stopping; exit code 2 would keep it from stopping.
 
 ## The layers
 

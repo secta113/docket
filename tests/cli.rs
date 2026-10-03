@@ -494,6 +494,9 @@ fn create_respects_absent_and_leaves_what_it_does_not_own() {
     fs::create_dir_all(root.path().join("docs")).unwrap();
     let log = "# Log\n\n## 2026-10-02\n\n* Mine\n";
     fs::write(root.path().join("docs/log.md"), log).unwrap();
+    fs::create_dir_all(root.path().join(".claude")).unwrap();
+    let settings = "{\"hooks\": {}}\n";
+    fs::write(root.path().join(".claude/settings.json"), settings).unwrap();
     let out = run(&["--root", &arg, "create"]);
     assert!(out.status.success(), "{}", stdout(&out));
     assert!(root.path().join("ui/pages/__init__.py").is_file());
@@ -508,6 +511,10 @@ fn create_respects_absent_and_leaves_what_it_does_not_own() {
     assert_eq!(
         fs::read_to_string(root.path().join("docs/log.md")).unwrap(),
         log
+    );
+    assert_eq!(
+        fs::read_to_string(root.path().join(".claude/settings.json")).unwrap(),
+        settings
     );
     let check = run(&["--root", &arg, "check"]);
     assert!(check.status.success(), "{}", stdout(&check));
@@ -1164,8 +1171,10 @@ fn a_repository_of_records_only_makes_and_checks_only_docs() {
         .map(|(path, _)| path)
         .collect();
     assert!(
-        made.iter()
-            .all(|path| path.starts_with("docs/") || path.starts_with(".config/")),
+        made.iter().all(|path| path.starts_with("docs/")
+            || path.starts_with(".config/")
+            || path == ".claude/settings.json"
+            || path == ".gemini/settings.json"),
         "{made:?}"
     );
     // Code anywhere is not looked at, and the output says the layers were skipped
@@ -1248,4 +1257,114 @@ fn a_marker_in_a_comment_fails_wherever_the_code_is() {
     write("tests/test_model.py", "x = 1  # about x\n");
     let out = run(&["--root", &arg, "check"]);
     assert!(out.status.success(), "{}", stdout(&out));
+}
+
+/// Run the stop hook from `root` with `input` on stdin.
+fn stop_hook(root: &Path, input: &str) -> Output {
+    use std::io::Write;
+    use std::process::Stdio;
+    let mut child = Command::new(env!("CARGO_BIN_EXE_rotproof"))
+        .args(["--root", &root_arg(root), "stop-hook"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("the binary runs");
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(input.as_bytes())
+        .unwrap();
+    child.wait_with_output().unwrap()
+}
+
+fn git(root: &Path, args: &[&str]) {
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["-c", "user.name=t", "-c", "user.email=t@example.com"])
+        .args(args)
+        .output()
+        .expect("git runs");
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+#[test]
+fn the_stop_hook_sends_the_agent_back_once_while_docs_did_not_change() {
+    let root = declared("stack = \"none\"\nareas = [\"a\"]\n");
+    let r = root.path();
+    assert!(run(&["--root", &root_arg(r), "create"]).status.success());
+    // create wrote the settings that run the hook, for each agent
+    for (path, event) in [
+        (".claude/settings.json", "\"Stop\""),
+        (".gemini/settings.json", "\"AfterAgent\""),
+    ] {
+        let settings = fs::read_to_string(r.join(path)).unwrap();
+        assert!(
+            settings.contains("\"command\": \"rotproof stop-hook\"") && settings.contains(event),
+            "{settings}"
+        );
+    }
+    git(r, &["init", "-q"]);
+    git(r, &["add", "-A"]);
+    git(r, &["commit", "-q", "-m", "start"]);
+    let open = r#"{"hook_event_name": "Stop", "stop_hook_active": false, "last_assistant_message": "Done; the Linux path is not checked."}"#;
+
+    // From a directory inside the project too
+    fs::create_dir_all(r.join("src/deep")).unwrap();
+    for from in [r.to_path_buf(), r.join("src/deep")] {
+        let out = stop_hook(&from, open);
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let said = stdout(&out);
+        assert!(said.contains("\"additionalContext\""), "{said}");
+        assert!(said.contains("\\\"not checked\\\""), "{said}");
+    }
+    // Gemini CLI, in its own form
+    let gemini = r#"{"hook_event_name": "AfterAgent", "stop_hook_active": false, "prompt_response": "Linux は未確認"}"#;
+    let said = stdout(&stop_hook(r, gemini));
+    assert!(said.contains("\"decision\":\"deny\""), "{said}");
+    // Once per stop
+    let again = open.replace("\"stop_hook_active\": false", "\"stop_hook_active\": true");
+    assert_eq!(stdout(&stop_hook(r, &again)), "");
+    // Nothing open
+    let done = open.replace("the Linux path is not checked", "every path passes");
+    assert_eq!(stdout(&stop_hook(r, &done)), "");
+    // Recorded: a change in docs/, new files included
+    fs::write(r.join("docs/backlog/new.md"), "x\n").unwrap();
+    let out = stop_hook(r, open);
+    assert!(out.status.success());
+    assert_eq!(stdout(&out), "");
+    // Outside a project, nothing is said
+    let outside = tempfile::tempdir().unwrap();
+    let out = stop_hook(outside.path(), open);
+    assert!(out.status.success());
+    assert_eq!(stdout(&out), "");
+}
+
+#[test]
+fn a_broken_stop_hook_exits_1_never_2() {
+    // Claude Code reads exit code 2 from a Stop hook as "do not stop"
+    let root = declared("stack = \"none\"\nareas = [\"a\"]\n");
+    for input in ["not json", "{}"] {
+        let out = stop_hook(root.path(), input);
+        assert_eq!(out.status.code(), Some(1), "{input}");
+        assert!(
+            String::from_utf8_lossy(&out.stderr).contains("rotproof stop-hook:"),
+            "{input}"
+        );
+    }
+    // Not a git repository: git fails, and the hook says so
+    let open = r#"{"hook_event_name": "Stop", "stop_hook_active": false, "last_assistant_message": "未確認"}"#;
+    let out = stop_hook(root.path(), open);
+    assert_eq!(out.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("git status failed"));
 }

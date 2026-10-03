@@ -2,6 +2,7 @@
 //! an agent works from (backlog, specs and log in `docs/`, written in OKF 0.2), and writes their index files.
 
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -35,6 +36,9 @@ enum Command {
     Check,
     /// Write every index.md in the bundle from the frontmatter
     Index,
+    /// Run as Claude Code's Stop or Gemini CLI's AfterAgent hook: send the agent back once when its last message
+    /// leaves something open and nothing in docs/ changed. Reads the hook input on stdin
+    StopHook,
 }
 
 fn main() -> ExitCode {
@@ -44,11 +48,15 @@ fn main() -> ExitCode {
         eprintln!("the root is not a directory: {}", cli.root.display());
         return ExitCode::from(2);
     }
+    if let Command::StopHook = cli.command {
+        return stop_hook(&cli.root);
+    }
     let result = match cli.command {
         Command::Init { stack } => init(&cli.root, &stack).map(|()| true),
         Command::Create => create(&cli.root).map(|()| true),
         Command::Check => check(&cli.root),
         Command::Index => index(&cli.root).map(|()| true),
+        Command::StopHook => unreachable!("answered above"),
     };
     match result {
         Ok(true) => ExitCode::SUCCESS,
@@ -123,6 +131,27 @@ fn check(root: &Path) -> Result<bool, String> {
         }
     }
     Ok(found.is_empty())
+}
+
+/// Answer the agent's stop hook. An error exits 1, never 2: Claude Code and Gemini CLI both take exit code 2 from it
+/// for "do not stop", and a broken hook would keep the agent from stopping instead of being shown.
+fn stop_hook(root: &Path) -> ExitCode {
+    let mut input = String::new();
+    let answer = std::io::stdin()
+        .read_to_string(&mut input)
+        .map_err(|e| format!("the hook input could not be read: {e}"))
+        .and_then(|_| rotproof::hook::run(root, &input));
+    match answer {
+        Ok(Some(out)) => {
+            println!("{out}");
+            ExitCode::SUCCESS
+        }
+        Ok(None) => ExitCode::SUCCESS,
+        Err(why) => {
+            eprintln!("rotproof stop-hook: {why}");
+            ExitCode::FAILURE
+        }
+    }
 }
 
 /// Write every index file, then list what was left out of them and the items to measure again.

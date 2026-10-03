@@ -5,6 +5,8 @@
 //!   A repository that keeps records only (`stack = "none"`) has no layers to make.
 //! - The records skeleton: the directories of `docs/`, `docs/log.md` with its title when it does not exist, and the
 //!   generated files (the index files, `docs/backlog/rules.md` and `docs/specs/rules.md`), which Rotproof rewrites.
+//! - `.claude/settings.json` and `.gemini/settings.json` with the hook that runs `rotproof stop-hook` when the agent
+//!   stops (`hook.rs`), each when it does not exist. A project that has one already adds the hook to it by hand.
 //!
 //! - The fields the declaration lacks that Rotproof requires (`ADDED` in `layers.rs`): an upgrade of Rotproof that adds
 //!   a field fails `rotproof check` until `rotproof create` runs, and then only on what the new rules find. The
@@ -23,6 +25,7 @@ use yaml_rust2::Yaml;
 
 use crate::bundle::{Bundle, LOG};
 use crate::frontmatter::split;
+use crate::hook::SETTINGS;
 use crate::layers::{ADDED, DECLARATION, Declaration, Declared, MISSING, declaration};
 use crate::source::{exactly, read_source, relative_path};
 
@@ -74,6 +77,11 @@ pub fn create(root: &Path) -> Result<Made, String> {
     }
     if !bundle.docs.join("log.md").exists() {
         write(root, "docs/log.md", LOG, &mut made)?;
+    }
+    for (path, text) in SETTINGS {
+        if !root.join(path).exists() {
+            write(root, path, text, &mut made)?;
+        }
     }
     let (files, problems) = bundle.expected().map_err(|e| e.to_string())?;
     for (path, text) in files {
