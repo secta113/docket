@@ -7,8 +7,9 @@
 //! - Every code file of the layout is read, `tests/` and the other paths that are not layers included, except the
 //!   paths the project lists in `unchecked` (generated code is written by a tool the project does not edit).
 //!
-//! Python only: for `rust` and `typescript`, the check says that it did not run. The floor: at least one code file
-//! is read, or the check fails instead of passing with nothing read.
+//! Python and TypeScript: a TypeScript or JavaScript file's `//` and `/* */` comments are read with oxc
+//! (`typescript.rs`), and JSX text is not a comment. For `rust`, the check says that it did not run. The floor: at
+//! least one source file is read, or the check fails instead of passing with nothing read.
 
 use std::collections::BTreeSet;
 use std::io;
@@ -68,7 +69,8 @@ pub fn problems(root: &Path, declared: &Declared) -> io::Result<Markers> {
         // A repository of records only has no code to read
         return Ok(Markers::default());
     };
-    if declared.declaration.stack != "python" {
+    let typescript = declared.declaration.stack == "typescript";
+    if !typescript && declared.declaration.stack != "python" {
         return Ok(Markers {
             skipped: Some(format!(
                 "comments are not checked for {}: Rotproof does not read the comments of a {} project yet",
@@ -91,6 +93,10 @@ pub fn problems(root: &Path, declared: &Declared) -> io::Result<Markers> {
         if unchecked.iter().any(|skip| within(&path, skip)) {
             continue;
         }
+        // Every file in `src/` is code in the layout; only source has comments to read
+        if typescript && !crate::typescript::is_source(&path) {
+            continue;
+        }
         let source = match read_source(&root.join(&path)) {
             Ok(source) => source,
             Err(e) if e.kind() == io::ErrorKind::InvalidData => {
@@ -103,7 +109,12 @@ pub fn problems(root: &Path, declared: &Declared) -> io::Result<Markers> {
         };
         read += 1;
         let lines: Vec<&str> = source.lines().collect();
-        for (line, in_comment) in markers(&source) {
+        let in_comments = if typescript {
+            typescript_markers(&source, &path)
+        } else {
+            markers(&source)
+        };
+        for (line, in_comment) in in_comments {
             found.push(format!("{path}:{line}\n{}", lines[line - 1].trim()));
             words.extend(in_comment);
         }
@@ -142,6 +153,21 @@ fn markers(source: &str) -> Vec<(usize, Vec<usize>)> {
         }
     }
     found
+}
+
+/// Every line of a TypeScript or JavaScript source whose comment holds a marker, and the markers on it as positions in
+/// [`MARKERS`]. A block comment of several lines is named at the line of each marker in it.
+fn typescript_markers(source: &str, path: &str) -> Vec<(usize, Vec<usize>)> {
+    let mut lines: std::collections::BTreeMap<usize, Vec<usize>> = Default::default();
+    for (at, comment) in crate::typescript::read(source, path).comments {
+        for word in MARKER.find_iter(&comment) {
+            lines
+                .entry(line_of(source, at + word.start()))
+                .or_default()
+                .push(MARKERS.iter().position(|m| *m == word.as_str()).unwrap());
+        }
+    }
+    lines.into_iter().collect()
 }
 
 /// The line (from 1) at a byte offset.
@@ -221,5 +247,34 @@ note = Status.TODO  # todo in lower case, TODOS and NOTES, NOTE_X and XXXL are o
     #[test]
     fn comments_after_a_syntax_error_are_read() {
         assert_eq!(words("def f(:\n    pass\n# FIXME\n"), [(3, vec!["FIXME"])]);
+    }
+
+    fn typescript_words(source: &str) -> Vec<(usize, Vec<&'static str>)> {
+        typescript_markers(source, "src/a.tsx")
+            .into_iter()
+            .map(|(line, at)| (line, at.into_iter().map(|i| MARKERS[i]).collect()))
+            .collect()
+    }
+
+    #[test]
+    fn typescript_comments_are_read_and_jsx_text_and_strings_are_not() {
+        let source = "\
+const status = 'TODO';
+// TODO: one
+const view = <p>NOTE in text, // HACK in text</p>;
+/* FIXME
+   and XXX on the next line */
+const done = Status.TODO; // a plain comment
+const empty = <div>{/* NOTE in a JSX comment */}</div>;
+";
+        assert_eq!(
+            typescript_words(source),
+            [
+                (2, vec!["TODO"]),
+                (4, vec!["FIXME"]),
+                (5, vec!["XXX"]),
+                (7, vec!["NOTE"]),
+            ]
+        );
     }
 }

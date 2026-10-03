@@ -281,11 +281,12 @@ stale_after: 2027-01-01T00:00:00+09:00   # optional: when to measure the state a
   cannot be read, or a `paths` entry with more than one `*`, fails rather than leaving its aliases unjudged. Two
   limits: only the first target of a `paths` entry is used, and a config extended from a package is not read, so an
   alias defined only there is taken for a package.
-- **No comment holds `TODO`, `FIXME`, `XXX`, `HACK` or `NOTE`** (Python): in upper case, as whole words, in any code
-  file outside `unchecked`, `tests/` included. Work left to do belongs in the backlog, where it is listed and closed,
+- **No comment holds `TODO`, `FIXME`, `XXX`, `HACK` or `NOTE`** (Python, TypeScript): in upper case, as whole words,
+  in any code file outside `unchecked`, `tests/` included; in TypeScript, the `//` and `/* */` comments of the
+  source files in `src/`, JSX text not counted. Work left to do belongs in the backlog, where it is listed and closed,
   and a decision with its reason in the spec or the log entry of the change; a comment that explains how to read the
   code stays, without the word. Only comments count: `Status.TODO` and `"XXX-XXXX"` are not markers, and docstrings
-  are strings. For `rust` and `typescript`, the check says that it did not run.
+  are strings. For `rust`, the check says that it did not run.
 
 - **The bundle is there:** `docs/`, `docs/index.md`, `docs/backlog/`, `docs/backlog/rules.md`, `docs/specs/`,
   `docs/specs/rules.md`, `docs/knowledge/` and `docs/knowledge/rules.md` exist, and the declaration with its `areas`

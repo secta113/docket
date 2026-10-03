@@ -1263,7 +1263,7 @@ fn what_cannot_be_read_fails_and_what_is_not_there_is_not_judged() {
 }
 
 #[test]
-fn the_stacks_without_a_direction_check_say_so() {
+fn what_a_stack_does_not_check_is_said() {
     for stack in ["typescript", "rust"] {
         let root = declared(&format!("stack = \"{stack}\"\nareas = [\"a\"]\n"));
         let arg = root_arg(root.path());
@@ -1283,17 +1283,21 @@ fn the_stacks_without_a_direction_check_say_so() {
             stack == "rust",
             "{stack}: {said}"
         );
-        assert!(
+        assert_eq!(
             said.contains(&format!(
                 "comments are not checked for TODO, FIXME, XXX, HACK, NOTE: Rotproof does not read the comments of a \
                  {stack} project yet"
             )),
+            stack == "rust",
             "{stack}: {said}"
         );
-        assert!(
-            said.contains("what was checked of the layers, and every record, keep the rules"),
-            "{stack}: {said}"
-        );
+        // A stack with nothing skipped says that everything kept the rules
+        let closing = if stack == "rust" {
+            "what was checked of the layers, and every record, keep the rules"
+        } else {
+            "the layers and every record keep the rules"
+        };
+        assert!(said.contains(closing), "{stack}: {said}");
     }
 }
 
@@ -1501,6 +1505,46 @@ fn a_marker_in_a_comment_fails_wherever_the_code_is() {
     // The same text without the markers passes
     write("domain/model.py", "X = 1\n# Split this when it grows\n");
     write("tests/test_model.py", "x = 1  # about x\n");
+    let out = run(&["--root", &arg, "check"]);
+    assert!(out.status.success(), "{}", stdout(&out));
+}
+
+#[test]
+fn a_marker_in_a_typescript_comment_fails() {
+    let root = repo_with_ui("typescript", "\"ui\"");
+    let r = root.path();
+    let write = |path: &str, text: &str| {
+        let full = r.join(path);
+        fs::create_dir_all(full.parent().unwrap()).unwrap();
+        fs::write(full, text).unwrap();
+    };
+    write(
+        "src/domain/song.ts",
+        "export const x = 1;\n// TODO: split this\n",
+    );
+    // JSX text, a string, and a file that is not source: not comments
+    write(
+        "src/domain/View.tsx",
+        "export const v = <p>TODO in text</p>;\nexport const s = 'FIXME';\n",
+    );
+    write("src/domain/notes.css", "/* HACK in a stylesheet */\n");
+    let arg = root_arg(r);
+    let out = run(&["--root", &arg, "check"]);
+    let said = stdout(&out);
+    assert_eq!(out.status.code(), Some(1), "{said}");
+    assert!(
+        said.contains("no comment holds TODO (work left to do"),
+        "{said}"
+    );
+    assert!(
+        said.contains("  src/domain/song.ts:2\n    // TODO: split this\n"),
+        "{said}"
+    );
+    assert_eq!(said.matches("\n  src/").count(), 1, "{said}");
+    write(
+        "src/domain/song.ts",
+        "export const x = 1;\n// Split this when it grows\n",
+    );
     let out = run(&["--root", &arg, "check"]);
     assert!(out.status.success(), "{}", stdout(&out));
 }

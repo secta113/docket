@@ -37,7 +37,7 @@ Also tracked, as in most repositories: `.gitattributes`, `.gitignore`, `Cargo.lo
 | `structure.rs` | The structure check: the tree agrees with `.config/rotproof.toml`, either way |
 | `direction.rs` | The direction check: every layer imports only what `layers/table.toml` allows (Python, TypeScript) |
 | `typescript.rs` | Reading TypeScript and JavaScript with oxc: imports, where each lands (through `tsconfig*.json`), and comments |
-| `markers.rs` | The marker check: no comment in the code holds `TODO`, `FIXME`, `XXX`, `HACK` or `NOTE` (Python) |
+| `markers.rs` | The marker check: no comment in the code holds `TODO`, `FIXME`, `XXX`, `HACK` or `NOTE` (Python, TypeScript) |
 | `hook.rs` | `rotproof stop-hook`, the hook Claude Code and Gemini CLI run when the agent stops, and the settings files that `rotproof create` writes for it |
 | `init.rs` | `rotproof init`: writing a project's declaration, once |
 | `create.rs` | `rotproof create`: making the layers and the records skeleton a project lacks |
