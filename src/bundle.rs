@@ -11,8 +11,8 @@ use std::path::{Path, PathBuf};
 use crate::frontmatter::Sections;
 use crate::layers::DECLARATION;
 use crate::schema::{
-    BacklogDoc, CLOSED_SECTION, DeadlineKind, Guide, Item, SPEC_FOLDERS, Spec, Status, Time,
-    backlog_doc, guide_doc, spec,
+    BacklogDoc, CLOSED_SECTION, DeadlineKind, Guide, Item, Knowledge, KnowledgeDoc, SPEC_FOLDERS,
+    Spec, Status, Time, backlog_doc, guide_doc, knowledge_doc, spec,
 };
 use crate::source::read_source;
 
@@ -26,18 +26,21 @@ pub const GENERATED: &str = "<!-- Generated from the frontmatter by `rotproof in
 pub const RULES: &str = include_str!("../records/rules.md");
 /// The spec rules, written like the backlog rules
 pub const SPEC_RULES: &str = include_str!("../records/spec-rules.md");
+/// The knowledge rules, written like the backlog rules
+pub const KNOWLEDGE_RULES: &str = include_str!("../records/knowledge-rules.md");
 /// The one directory of specs that holds guides: the spec rules, and any a project adds
 const GUIDES_AMONG_SPECS: &str = "specs";
 /// The log as `rotproof create` makes it. From then on it is the project's
 pub const LOG: &str = include_str!("../records/log.md");
 /// The bundle-root index links to these, in this order
-const ROOT_ENTRIES: [(&str, &str, &str); 3] = [
+const ROOT_ENTRIES: [(&str, &str, &str); 4] = [
     ("Backlog", "backlog/", "Open problems and postponed work."),
     (
         "Specs",
         "specs/",
         "Proposed changes: being written, in progress, or closed.",
     ),
+    ("Knowledge", "knowledge/", "How things are now, and why."),
     ("Log", "log.md", "What was done, newest first."),
 ];
 
@@ -67,6 +70,37 @@ pub fn backlog(docs: &Docs, areas: &[String]) -> Backlog {
                 out.items.insert(name.clone(), (item, sections));
             }
             Ok(BacklogDoc::Guide(guide)) => {
+                out.guides.insert(name.clone(), guide);
+            }
+            Err(why) => {
+                out.problems.insert(name.clone(), why);
+            }
+        }
+    }
+    out
+}
+
+/// The documents of `docs/knowledge/`, sorted out.
+#[derive(Debug, Default)]
+pub struct KnowledgeFolder {
+    pub documents: BTreeMap<String, (Knowledge, Sections)>,
+    pub guides: BTreeMap<String, Guide>,
+    pub problems: Problems,
+}
+
+/// The documents of `docs/knowledge/`, sorted out. A document whose area is not among `areas` is left out with why.
+pub fn knowledge(docs: &Docs, areas: &[String]) -> KnowledgeFolder {
+    let mut out = KnowledgeFolder::default();
+    for (name, text) in docs {
+        match knowledge_doc(text) {
+            Ok(KnowledgeDoc::Knowledge(doc, _)) if !areas.contains(&doc.tag) => {
+                out.problems
+                    .insert(name.clone(), undeclared(&doc.tag, areas));
+            }
+            Ok(KnowledgeDoc::Knowledge(doc, sections)) => {
+                out.documents.insert(name.clone(), (doc, sections));
+            }
+            Ok(KnowledgeDoc::Guide(guide)) => {
                 out.guides.insert(name.clone(), guide);
             }
             Err(why) => {
@@ -288,7 +322,29 @@ impl Bundle {
             ));
         }
         problems.extend(specs.problems);
+        let read = self.read_knowledge()?;
+        files.push((
+            self.docs.join("knowledge").join("rules.md"),
+            KNOWLEDGE_RULES.into(),
+        ));
+        files.push((
+            self.docs.join("knowledge").join("index.md"),
+            render_knowledge(&read.documents, &read.guides, &self.areas),
+        ));
+        problems.extend(
+            read.problems
+                .into_iter()
+                .map(|(name, why)| (format!("knowledge/{name}"), why)),
+        );
         Ok((files, problems))
+    }
+
+    /// The documents of `docs/knowledge/`, with the knowledge rules read as Rotproof writes them, so the index lists
+    /// them on the run that writes them.
+    pub fn read_knowledge(&self) -> io::Result<KnowledgeFolder> {
+        let mut docs = self.read_folder("knowledge")?;
+        docs.insert("rules.md".into(), KNOWLEDGE_RULES.into());
+        Ok(knowledge(&docs, &self.areas))
     }
 
     /// Every spec of `docs/specs/`, checked one by one and against each other. The spec rules are read
@@ -511,6 +567,50 @@ pub fn render_specs(folder: &str, all: &Specs, areas: &[String]) -> String {
     out.join("\n") + "\n"
 }
 
+/// The knowledge index: the guides, the documents that hold by area in the order `areas` declares them, and the
+/// deprecated ones last under `# Closed`, with what replaced them.
+pub fn render_knowledge(
+    documents: &BTreeMap<String, (Knowledge, Sections)>,
+    guides: &BTreeMap<String, Guide>,
+    areas: &[String],
+) -> String {
+    let mut out = vec![GENERATED.to_string()];
+    out.extend(guide_section(guides));
+    let entry = |name: &str, doc: &Knowledge| {
+        format!(
+            "* [{}]({name}) - {}",
+            link_text(&doc.title),
+            doc.description
+        )
+    };
+    for area in areas {
+        let in_area: Vec<_> = documents
+            .iter()
+            .filter(|(_, (doc, _))| &doc.tag == area && doc.status == Status::Stable)
+            .collect();
+        if in_area.is_empty() {
+            continue;
+        }
+        out.extend(["".into(), format!("# {area}"), "".into()]);
+        out.extend(in_area.into_iter().map(|(name, (doc, _))| entry(name, doc)));
+    }
+    let closed: Vec<_> = documents
+        .iter()
+        .filter(|(_, (doc, _))| doc.status == Status::Deprecated)
+        .collect();
+    if !closed.is_empty() {
+        out.extend(["".into(), "# Closed".into(), "".into()]);
+        for (name, (doc, sections)) in closed {
+            out.push(format!(
+                "{} | Resolution: {}",
+                entry(name, doc),
+                first_sentence(&sections[CLOSED_SECTION])
+            ));
+        }
+    }
+    out.join("\n") + "\n"
+}
+
 /// The bundle-root index. Only this index file may carry frontmatter (OKF 0.2, section 12).
 pub fn render_root() -> String {
     let mut out: Vec<String> = [
@@ -662,6 +762,45 @@ Not yet. Measured by hand.
             Vec::<String>::new()
         );
         assert_eq!(stale(&parsed.items, cutoff), vec!["fresh.md"]);
+    }
+
+    #[test]
+    fn the_knowledge_index_lists_by_area_then_what_no_longer_holds() {
+        let doc = |title: &str, tag: &str| {
+            format!(
+                "---\ntype: Knowledge\ntitle: {title}\ndescription: D.\ntags: [{tag}]\nstatus: stable\n---\n"
+            )
+        };
+        let docs: Docs = [
+            ("api.md".to_string(), doc("API", "billing")),
+            ("ops.md".to_string(), doc("Ops", "operations")),
+            (
+                "old.md".to_string(),
+                crate::schema::closed_record(&doc("Old", "billing"), "Replaced by the API. More."),
+            ),
+            ("rules.md".to_string(), KNOWLEDGE_RULES.to_string()),
+        ]
+        .into();
+        let read = knowledge(&docs, &areas());
+        assert!(read.problems.is_empty(), "{:?}", read.problems);
+        let index = render_knowledge(&read.documents, &read.guides, &areas());
+        assert_eq!(
+            index
+                .lines()
+                .filter(|l| l.contains("](") || l.starts_with('#'))
+                .collect::<Vec<_>>(),
+            [
+                "# Guides",
+                "* [Knowledge rules](rules.md) - What goes in docs/knowledge/, how each document is written, and how \
+                 the log names every edit. The format is OKF 0.2; rotproof check checks it.",
+                "# operations",
+                "* [Ops](ops.md) - D.",
+                "# billing",
+                "* [API](api.md) - D.",
+                "# Closed",
+                "* [Old](old.md) - D. | Resolution: Replaced by the API.",
+            ]
+        );
     }
 
     #[test]

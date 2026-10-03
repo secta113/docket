@@ -1,4 +1,4 @@
-//! The frontmatter of each record type: backlog items, guides and specs.
+//! The frontmatter of each record type: backlog items, guides, specs and knowledge documents.
 //!
 //! OKF lets a producer add any key, and tells readers not to reject one they do not know. So an unknown field passes
 //! as an extension, unless it looks like a misspelling of a field the type reads (OKF's or Rotproof's): that one fails,
@@ -44,6 +44,12 @@ static OWN_FIELDS: LazyLock<Vec<(&'static str, &'static str)>> = LazyLock::new(|
             "guide",
             keys_read(|fields| {
                 guide(fields);
+            }),
+        ),
+        (
+            "knowledge document",
+            keys_read(|fields| {
+                knowledge_fields(fields);
             }),
         ),
     ];
@@ -172,6 +178,17 @@ pub struct Spec {
     pub epic: Option<String>,
 }
 
+/// A document of how things are now, or why: it never closes while it holds, and is edited in place.
+#[derive(Debug, Clone)]
+pub struct Knowledge {
+    pub title: String,
+    pub description: String,
+    /// The area. The index groups documents by it
+    pub tag: String,
+    /// `Stable` = holds / `Deprecated` = no longer holds. A deprecated document stays, so links to it keep working
+    pub status: Status,
+}
+
 /// A document in `docs/backlog/`.
 #[derive(Debug, Clone)]
 pub enum BacklogDoc {
@@ -280,6 +297,36 @@ pub fn spec(folder: &str, text: &str) -> Result<(Spec, Sections), String> {
     Ok((spec, sections))
 }
 
+/// A document in `docs/knowledge/`.
+#[derive(Debug, Clone)]
+pub enum KnowledgeDoc {
+    Knowledge(Knowledge, Sections),
+    Guide(Guide),
+}
+
+/// A document in `docs/knowledge/`, or why it breaks the knowledge format.
+pub fn knowledge_doc(text: &str) -> Result<KnowledgeDoc, String> {
+    if let Some(guide) = guide_doc(text) {
+        return guide.map(KnowledgeDoc::Guide);
+    }
+    let (meta, sections) = split(text)?;
+    let mut fields = Fields::new(&meta);
+    let knowledge = knowledge_fields(&mut fields);
+    let knowledge = fields.finish(knowledge)?;
+    if knowledge.status == Status::Deprecated {
+        if sections
+            .get(CLOSED_SECTION)
+            .is_none_or(|text| text.is_empty())
+        {
+            return Err(format!(
+                "a deprecated knowledge document needs a non-empty # {CLOSED_SECTION}: what replaced it"
+            ));
+        }
+        resolution_first(text, "knowledge document")?;
+    }
+    Ok(KnowledgeDoc::Knowledge(knowledge, sections))
+}
+
 // Each reader below reads every field before it can return, so running it on an empty mapping lists its fields
 // (`keys_read`)
 
@@ -302,6 +349,23 @@ fn spec_fields(fields: &mut Fields) -> Option<Spec> {
         tag: tag?,
         status: status?,
         epic: epic?,
+    })
+}
+
+fn knowledge_fields(fields: &mut Fields) -> Option<Knowledge> {
+    fields.required("type", one_of(&["Knowledge"]));
+    let title = fields.required("title", one_line);
+    let description = fields.required("description", one_line);
+    let tag = fields.required("tags", one_tag);
+    let status = fields.required("status", status(&[Status::Stable, Status::Deprecated]));
+    fields.optional("verified", stamps);
+    fields.optional("stale_after", time);
+    okf_optional(fields);
+    Some(Knowledge {
+        title: title?,
+        description: description?,
+        tag: tag?,
+        status: status?,
     })
 }
 
@@ -784,6 +848,68 @@ Not yet.
     fn the_good_input_passes() {
         // If the valid item did not pass, a failure below would not show that the one change was caught
         assert!(backlog_doc(GOOD).is_ok(), "{:?}", backlog_doc(GOOD).err());
+    }
+
+    const KNOWLEDGE: &str = "---
+type: Knowledge
+title: The API
+description: How the API is shaped, and why.
+tags: [operations]
+status: stable
+---
+
+# Shape
+
+Text.
+";
+
+    #[test]
+    fn a_knowledge_document_is_read() {
+        let Ok(KnowledgeDoc::Knowledge(doc, _)) = knowledge_doc(KNOWLEDGE) else {
+            panic!("{:?}", knowledge_doc(KNOWLEDGE).err());
+        };
+        assert_eq!(
+            (doc.tag.as_str(), doc.status),
+            ("operations", Status::Stable)
+        );
+        let gone = closed_record(KNOWLEDGE, "Replaced by the v2 document.");
+        assert!(
+            knowledge_doc(&gone).is_ok(),
+            "{:?}",
+            knowledge_doc(&gone).err()
+        );
+        // The rules are a guide in the same directory
+        let rules = "---\ntype: Guide\ntitle: R\ndescription: D.\n---\n";
+        assert!(matches!(knowledge_doc(rules), Ok(KnowledgeDoc::Guide(_))));
+    }
+
+    #[test]
+    fn a_broken_knowledge_document_is_caught() {
+        let bad = [
+            ("no area", KNOWLEDGE.replace("tags: [operations]\n", "")),
+            (
+                "a draft",
+                KNOWLEDGE.replace("status: stable", "status: draft"),
+            ),
+            (
+                "deprecated without a resolution",
+                KNOWLEDGE.replace("status: stable", "status: deprecated"),
+            ),
+            (
+                "the resolution after another heading",
+                KNOWLEDGE.replace("status: stable", "status: deprecated")
+                    + "\n# Resolution\n\nGone.\n",
+            ),
+            // A spec's own field: the wrong type
+            (
+                "an epic",
+                KNOWLEDGE.replace("status: stable", "status: stable\nepic: big"),
+            ),
+            ("a misspelled title", KNOWLEDGE.replace("title:", "titel:")),
+        ];
+        for (name, text) in bad {
+            assert!(knowledge_doc(&text).is_err(), "{name} passed");
+        }
     }
 
     #[test]

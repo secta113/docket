@@ -9,7 +9,7 @@ and why, is in `README.md`.
 |---|---|
 | `src/` | The tool, one module per concern (below) |
 | `layers/` | The layer definitions, built into the binary: `table.toml` (what the layers are, in every stack) and one layout per stack (`python.toml`, `typescript.toml`, `rust.toml`: where each layer lives and the files that make it) |
-| `records/` | The records skeleton, built into the binary: `rules.md` and `spec-rules.md` (the backlog rules and the spec rules Rotproof writes into every project), and `log.md` (the log `rotproof create` starts) |
+| `records/` | The records skeleton, built into the binary: `rules.md`, `spec-rules.md` and `knowledge-rules.md` (the backlog, spec and knowledge rules Rotproof writes into every project), and `log.md` (the log `rotproof create` starts) |
 | `tests/` | Tests that run the built binary as a user runs it (`cli.rs`) |
 | `xtask/` | The CI entry point (`cargo xtask ci`), and `cargo xtask licenses`, which writes `THIRD-PARTY-LICENSES.txt` (`--check`: checks it) |
 | `.cargo/` | The `cargo xtask` alias |

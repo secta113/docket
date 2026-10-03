@@ -19,7 +19,7 @@ fn stdout(out: &Output) -> String {
 fn repo() -> tempfile::TempDir {
     let root = declared("stack = \"none\"\nareas = [\"operations\"]\n");
     let docs = root.path().join("docs");
-    for folder in ["backlog", "specs"] {
+    for folder in ["backlog", "specs", "knowledge"] {
         fs::create_dir_all(docs.join(folder)).unwrap();
     }
     root
@@ -285,6 +285,8 @@ fn index_writes_every_index_file() {
         "docs/index.md",
         "docs/backlog/index.md",
         "docs/specs/index.md",
+        "docs/knowledge/rules.md",
+        "docs/knowledge/index.md",
     ] {
         assert!(root.path().join(path).is_file(), "{path} was not written");
         assert!(
@@ -1357,4 +1359,82 @@ fn a_broken_stop_hook_exits_1_never_2() {
     let out = stop_hook(root.path(), open);
     assert_eq!(out.status.code(), Some(1));
     assert!(String::from_utf8_lossy(&out.stderr).contains("git status failed"));
+}
+
+#[test]
+fn every_edit_of_a_knowledge_document_is_named_in_the_log() {
+    let root = clean_repo();
+    let r = root.path();
+    let arg = root_arg(r);
+    assert!(
+        r.join("docs/knowledge/rules.md").is_file(),
+        "create makes docs/knowledge/"
+    );
+    let doc = "---\ntype: Knowledge\ntitle: API\ndescription: How the API is shaped.\ntags: [a]\nstatus: stable\n---\n\n# Shape\n\nOne endpoint.\n";
+    fs::write(r.join("docs/knowledge/api.md"), doc).unwrap();
+    assert!(run(&["--root", &arg, "index"]).status.success());
+
+    // Not in the log: the failure gives the line to write
+    let out = run(&["--root", &arg, "check"]);
+    let said = stdout(&out);
+    assert_eq!(out.status.code(), Some(1), "{said}");
+    assert!(
+        said.contains("the log names every knowledge document as it is now:"),
+        "{said}"
+    );
+    let line = said
+        .split('`')
+        .find(|part| part.starts_with("* **Knowledge**: knowledge/api.md@"))
+        .unwrap_or_else(|| panic!("no line to write: {said}"))
+        .to_string();
+
+    // Written in the log entry: it passes
+    let log = format!("# Log\n\n## 2026-10-02\n\n* Something\n  {line}\n");
+    fs::write(r.join("docs/log.md"), &log).unwrap();
+    let out = run(&["--root", &arg, "check"]);
+    assert!(out.status.success(), "{}", stdout(&out));
+
+    // Edited after its entry: it fails again
+    fs::write(
+        r.join("docs/knowledge/api.md"),
+        doc.replace("One endpoint.", "Two endpoints."),
+    )
+    .unwrap();
+    let out = run(&["--root", &arg, "check"]);
+    assert_eq!(out.status.code(), Some(1), "{}", stdout(&out));
+    assert!(stdout(&out).contains("knowledge/api.md: no log entry names it as it is now"));
+
+    // The log names a document that is not there
+    fs::write(r.join("docs/knowledge/api.md"), doc).unwrap();
+    fs::write(
+        r.join("docs/log.md"),
+        format!("{log}  * **Knowledge**: knowledge/gone.md@0123abcd\n"),
+    )
+    .unwrap();
+    let out = run(&["--root", &arg, "check"]);
+    let said = stdout(&out);
+    assert_eq!(out.status.code(), Some(1), "{said}");
+    assert!(
+        said.contains("the log points only at real knowledge documents:\n  no such document: docs/knowledge/gone.md"),
+        "{said}"
+    );
+}
+
+#[test]
+fn a_knowledge_document_belongs_in_docs_knowledge() {
+    let root = clean_repo();
+    let r = root.path();
+    fs::write(
+        r.join("docs/specs/api.md"),
+        "---\ntype: Knowledge\ntitle: API\ndescription: D.\ntags: [a]\nstatus: stable\n---\n",
+    )
+    .unwrap();
+    let out = run(&["--root", &root_arg(r), "check"]);
+    let said = stdout(&out);
+    assert_eq!(out.status.code(), Some(1), "{said}");
+    assert!(
+        said.contains("every document is a known type in its place:\n  specs/api.md: type")
+            && said.contains("\"Knowledge\") does not belong in docs/specs (Spec, Guide)"),
+        "{said}"
+    );
 }

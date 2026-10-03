@@ -4,7 +4,8 @@
 //!   files. A present layer is the project's, and nothing in it is touched.
 //!   A repository that keeps records only (`stack = "none"`) has no layers to make.
 //! - The records skeleton: the directories of `docs/`, `docs/log.md` with its title when it does not exist, and the
-//!   generated files (the index files, `docs/backlog/rules.md` and `docs/specs/rules.md`), which Rotproof rewrites.
+//!   generated files (the index files and the rules of `docs/backlog/`, `docs/specs/` and `docs/knowledge/`), which
+//!   Rotproof rewrites.
 //! - `.claude/settings.json` and `.gemini/settings.json` with the hook that runs `rotproof stop-hook` when the agent
 //!   stops (`hook.rs`), each when it does not exist. A project that has one already adds the hook to it by hand.
 //!
@@ -71,7 +72,7 @@ pub fn create(root: &Path) -> Result<Made, String> {
     }
 
     let bundle = Bundle::new(root, declared.declaration.areas.clone());
-    for folder in ["backlog", "specs"] {
+    for folder in ["backlog", "specs", "knowledge"] {
         let dir = bundle.docs.join(folder);
         fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     }
@@ -148,7 +149,7 @@ fn complete(root: &Path) -> Result<Option<(String, Vec<String>)>, String> {
 fn record_tags(root: &Path) -> Result<Vec<String>, String> {
     let bundle = Bundle::new(root, Vec::new());
     let mut tags = BTreeSet::new();
-    for folder in ["backlog", "specs"] {
+    for folder in ["backlog", "specs", "knowledge"] {
         if !bundle.docs.join(folder).is_dir() {
             continue;
         }
@@ -160,7 +161,7 @@ fn record_tags(root: &Path) -> Result<Vec<String>, String> {
             let kind = meta
                 .get(&Yaml::String("type".into()))
                 .and_then(Yaml::as_str);
-            if !matches!(kind, Some("Backlog Item" | "Spec")) {
+            if !matches!(kind, Some("Backlog Item" | "Spec" | "Knowledge")) {
                 continue;
             }
             match meta.get(&Yaml::String("tags".into())) {

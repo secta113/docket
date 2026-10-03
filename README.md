@@ -100,7 +100,7 @@ nothing in the backlog. `rotproof stop-hook` is the hook an agent runs when it s
 the message holds a phrase that leaves something open and `git status` shows no change in `docs/`, the hook sends the
 agent back once, asking it to record the finding or to say in one line where it already is. While the agent is
 continuing because of a stop hook, the hook lets it stop, so it never loops. A line that points at the records (the
-word `spec` or `backlog`) is not read: what it leaves open is recorded where it points. The
+word `spec`, `backlog` or `knowledge`) is not read: what it leaves open is recorded where it points. The
 phrases are built in (Japanese and English); the agent decides what each one meant.
 
 `rotproof create` writes `.claude/settings.json` and `.gemini/settings.json` with the hook, each when it does not
@@ -165,7 +165,17 @@ docs/
   specs/            every spec, open or closed (type: Spec, status: draft, stable or deprecated)
     rules.md        generated: the spec rules (type: Guide)
     index.md        generated
+  knowledge/        how things are now, and why (type: Knowledge, status: stable or deprecated)
+    rules.md        generated: the knowledge rules (type: Guide)
+    index.md        generated
 ```
+
+The three directories answer three questions: what is being changed (`specs/`, closed once implemented or dropped),
+what is open (`backlog/`, closed once dealt with), and how things are now (`knowledge/`, edited in place, deprecated
+only when it no longer holds). A closed spec is history; what it built is described in `knowledge/`, an API or a data
+model, or why something was decided. Every edit of a knowledge document is named in the log by a hash of its
+contents, under the label `**Knowledge**` (`* **Knowledge**: knowledge/api.md@a3f9c1d2`), and `rotproof check` fails
+an edit the log does not name.
 
 A record stays where it was written when it closes: its status says it is closed, and the index lists it under
 `# Closed`. Its path, and every link to it, never changes, so closing a record is a change to that record and its
@@ -241,7 +251,8 @@ stale_after: 2027-01-01T00:00:00+09:00   # optional: when to measure the state a
   are strings. For `rust` and `typescript`, the check says that it did not run.
 
 - **The bundle is there:** `docs/`, `docs/index.md`, `docs/backlog/`, `docs/backlog/rules.md`, `docs/specs/`,
-  and `docs/specs/rules.md` exist, and the declaration with its `areas` can be read. Without them every other check
+  `docs/specs/rules.md`, `docs/knowledge/` and `docs/knowledge/rules.md` exist, and the declaration with its `areas`
+  can be read. Without them every other check
   would pass with nothing checked.
 - **Every name is compared exactly,** wherever Rotproof looks for a file or a directory: a link's target, the files
   above, the layers and the declaration. Rotproof reads the names the directories hold instead of asking the
@@ -282,6 +293,11 @@ stale_after: 2027-01-01T00:00:00+09:00   # optional: when to measure the state a
   a flat list of entries grouped under the dates (OKF 0.2, section 9): every entry is a list item, and its indented
   lines (wrapped text, nested items) belong to it. A task heading (`### ...`), a paragraph, or an entry before the
   first date fails. A new log, with only its title and HTML comments, passes.
+- **Every knowledge document keeps the format,** as a spec does (without `epic`, and `status` `stable` or
+  `deprecated`), and **the log names it as it is now:** some `**Knowledge**` field of a log entry, with its wrapped
+  lines, names it with the first 8 hex digits of SHA-256 of the whole file (every line ending as `\n`). An edit the
+  log does not name fails, and the failure prints the line to write. A `**Knowledge**` field that names a document
+  `docs/knowledge/` does not have fails too.
 - **Every document is a known type in its directory.** The fields OKF defines for a document pass as OKF writes them
   (`generated` needs only `by`; every entry of `sources` needs a `resource`; `usage_window` is a `{from, to}` range).
   The names OKF reserves appear only where Rotproof writes and reads them: `index.md` in `docs/` and in each directory
