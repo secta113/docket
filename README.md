@@ -77,11 +77,26 @@ that keeps records only). It writes only the declaration, so you declare in `abs
 anything is made, and it never overwrites a declaration that exists. Then run `rotproof create`.
 
 Run `rotproof create` when a project starts, and again after you change `.config/rotproof.toml` on purpose. It makes
-only what is missing: a layer that is neither present nor declared absent, `docs/log.md`, `.claude/settings.json` and
-`.gemini/settings.json` when there are none, and the files Rotproof generates (`.rotproof/AGENTS.md`, and the index
-files and rules in `docs/`). It never overwrites a file it does not
-generate, and never moves or deletes one. Nothing runs it on its own, so a layer removed by mistake fails `rotproof
-check` instead of coming back.
+only what is missing: a layer that is neither present nor declared absent, the project's files when they do not exist
+(below), and the files Rotproof generates (`.rotproof/AGENTS.md`, and the index files and rules in `docs/`). It never
+overwrites a file it does not generate, and never moves or deletes one. Nothing runs it on its own, so a layer removed
+by mistake fails `rotproof check` instead of coming back.
+
+The project's files are written once, as a starting point, and are the project's from then on:
+
+| File | Content |
+|---|---|
+| `AGENTS.md` | The map (the layers present, with their roles to rewrite), the differences from what Rotproof keeps, and the project's own rules. It points at `.rotproof/AGENTS.md` |
+| `CLAUDE.md` | `@AGENTS.md` and `@.rotproof/AGENTS.md` |
+| `README.md` | The project's name (its root directory's) and how to run Rotproof |
+| `.gitignore`, `.gitattributes` | For the stack; line endings as LF |
+| `docs/log.md` | The log, with its title |
+| `.claude/settings.json`, `.gemini/settings.json` | The stop hook (see "The stop hook") |
+| `requirements-dev.txt` | `python` and `none`: Rotproof pinned with `==` |
+| `.github/workflows/ci.yml` | `python` and `none`: installs `requirements-dev.txt` and runs `rotproof check`, with a time limit |
+
+How a `typescript` or `rust` project pins Rotproof is not decided yet, so for those stacks `rotproof create` writes
+neither the pin nor the workflow, and says so.
 
 Run it also after upgrading Rotproof. When a newer Rotproof requires a field the declaration lacks, `rotproof check`
 fails and says so, and `rotproof create` adds the field under a comment that says what it is and where its first value
@@ -94,8 +109,9 @@ stack. It says how to run Rotproof, lists the layers with where each lives and w
 the Rotproof version that wrote it, so after an upgrade `rotproof check` fails until `rotproof create` has rewritten
 it. Edited by hand, it fails too: a project's own rules go in its own `AGENTS.md`.
 
-The guide only helps if your agent reads it. Point at it from your `AGENTS.md` (or whatever file your agent reads
-first), and import it in `CLAUDE.md` for Claude Code:
+The guide only helps if your agent reads it. The `AGENTS.md` and `CLAUDE.md` that `rotproof create` writes point at it;
+a project that has its own points at it from its `AGENTS.md` (or whatever file its agent reads first), and imports it
+in `CLAUDE.md` for Claude Code:
 
 ```markdown
 @AGENTS.md

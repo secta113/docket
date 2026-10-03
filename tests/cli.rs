@@ -474,6 +474,109 @@ fn create_makes_each_stack_once_and_check_passes_on_it() {
     }
 }
 
+/// The project's files at the root that `rotproof create` writes, outside hidden directories
+const PROJECT_FILES: [&str; 4] = [
+    "AGENTS.md",
+    "CLAUDE.md",
+    "README.md",
+    "requirements-dev.txt",
+];
+
+#[test]
+fn create_writes_the_projects_files_once() {
+    // (stack, whether Rotproof is pinned from PyPI)
+    for (stack, pinned) in [
+        ("python", true),
+        ("none", true),
+        ("typescript", false),
+        ("rust", false),
+    ] {
+        let parent = tempfile::tempdir().unwrap();
+        let root = parent.path().join("my-app");
+        fs::create_dir_all(root.join(".config")).unwrap();
+        let absent = if stack == "none" {
+            ""
+        } else {
+            "absent = [\"utils\"]\n"
+        };
+        fs::write(
+            root.join(".config/rotproof.toml"),
+            format!("stack = \"{stack}\"\nareas = [\"a\"]\n{absent}"),
+        )
+        .unwrap();
+        let arg = root_arg(&root);
+        let out = run(&["--root", &arg, "create"]);
+        assert!(out.status.success(), "{stack}: {}", stdout(&out));
+        for path in [
+            "AGENTS.md",
+            "CLAUDE.md",
+            "README.md",
+            ".gitignore",
+            ".gitattributes",
+        ] {
+            let text = fs::read_to_string(root.join(path))
+                .unwrap_or_else(|_| panic!("{stack}: {path} was not written"));
+            for placeholder in ["{name}", "{map}", "{development}", "{version}", "{stack}"] {
+                assert!(!text.contains(placeholder), "{stack}: {path}: {text}");
+            }
+        }
+        let agents = fs::read_to_string(root.join("AGENTS.md")).unwrap();
+        assert!(agents.starts_with("# AGENTS.md (my-app)\n"), "{agents}");
+        assert!(
+            fs::read_to_string(root.join("README.md"))
+                .unwrap()
+                .starts_with("# my-app\n")
+        );
+        assert_eq!(
+            fs::read_to_string(root.join("CLAUDE.md")).unwrap(),
+            "@AGENTS.md\n@.rotproof/AGENTS.md\n"
+        );
+        // The map has the layers present, and not the one declared absent
+        assert_eq!(
+            agents.contains("handler/` | Entry points"),
+            stack != "none",
+            "{stack}: {agents}"
+        );
+        assert!(!agents.contains("utils/` |"), "{stack}: {agents}");
+        let requirements = root.join("requirements-dev.txt");
+        let workflow = root.join(".github/workflows/ci.yml");
+        if pinned {
+            let pin = format!("rotproof=={}\n", env!("CARGO_PKG_VERSION"));
+            assert!(fs::read_to_string(&requirements).unwrap().contains(&pin));
+            let workflow = fs::read_to_string(&workflow).unwrap();
+            assert!(
+                workflow.contains("timeout-minutes:") && workflow.contains("- run: rotproof check")
+            );
+            assert!(!stdout(&out).contains("not written"), "{}", stdout(&out));
+        } else {
+            assert!(!requirements.exists() && !workflow.exists(), "{stack}");
+            assert!(
+                stdout(&out).contains(&format!(
+                    "not written: Rotproof is not pinned and no CI workflow is written: how a {stack} project"
+                )),
+                "{stack}: {}",
+                stdout(&out)
+            );
+        }
+        assert!(run(&["--root", &arg, "check"]).status.success());
+
+        // From then on the files are the project's: an edit stays, and only a missing file is written again
+        fs::write(root.join("AGENTS.md"), "mine\n").unwrap();
+        fs::remove_file(root.join("CLAUDE.md")).unwrap();
+        let out = run(&["--root", &arg, "create"]);
+        assert_eq!(
+            fs::read_to_string(root.join("AGENTS.md")).unwrap(),
+            "mine\n"
+        );
+        assert!(stdout(&out).contains("wrote CLAUDE.md"), "{}", stdout(&out));
+        assert!(
+            !stdout(&out).contains("wrote AGENTS.md"),
+            "{}",
+            stdout(&out)
+        );
+    }
+}
+
 #[test]
 fn the_guide_is_rotproofs_and_check_fails_until_create_rewrites_it() {
     for stack in ["python", "typescript", "rust", "none"] {
@@ -1211,12 +1314,11 @@ fn a_repository_of_records_only_makes_and_checks_only_docs() {
         .into_iter()
         .map(|(path, _)| path)
         .collect();
+    // No layer: every file is in a hidden directory, in docs/, or one of the project's files at the root
     assert!(
-        made.iter().all(|path| path.starts_with("docs/")
-            || path.starts_with(".config/")
-            || path == ".rotproof/AGENTS.md"
-            || path == ".claude/settings.json"
-            || path == ".gemini/settings.json"),
+        made.iter().all(|path| path.starts_with('.')
+            || path.starts_with("docs/")
+            || PROJECT_FILES.contains(&path.as_str())),
         "{made:?}"
     );
     // Code anywhere is not looked at, and the output says the layers were skipped

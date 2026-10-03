@@ -10,7 +10,7 @@ and why, is in `README.md`.
 | `src/` | The tool, one module per concern (below) |
 | `layers/` | The layer definitions, built into the binary: `table.toml` (what the layers are, in every stack) and one layout per stack (`python.toml`, `typescript.toml`, `rust.toml`: where each layer lives and the files that make it) |
 | `records/` | The records skeleton, built into the binary: `rules.md`, `spec-rules.md` and `knowledge-rules.md` (the backlog, spec and knowledge rules Rotproof writes into every project), and `log.md` (the log `rotproof create` starts) |
-| `project/` | What Rotproof writes into a project outside `docs/`, built into the binary: `rotproof/` holds the parts of `.rotproof/AGENTS.md`, the guide Rotproof generates for each stack |
+| `project/` | What Rotproof writes into a project outside `docs/`, built into the binary. Each file is named after the one it becomes, without a leading dot and with `.in` added, so no agent here reads a project's `AGENTS.md` as its own: the project's files at the top (`AGENTS.md.in`, `CLAUDE.md.in`, `README.md.in`, `gitattributes.in`), `gitignore/` (one per stack), `pypi/` (the pin, the workflow and the README's instructions for the stacks that install Rotproof from PyPI), `unpinned/` (the README's instructions for the others), and `rotproof/` (the parts of `.rotproof/AGENTS.md`, the guide Rotproof generates for each stack) |
 | `tests/` | Tests that run the built binary as a user runs it (`cli.rs`) |
 | `xtask/` | The CI entry point (`cargo xtask ci`), and `cargo xtask licenses`, which writes `THIRD-PARTY-LICENSES.txt` (`--check`: checks it) |
 | `.cargo/` | The `cargo xtask` alias |
@@ -40,7 +40,7 @@ Also tracked, as in most repositories: `.gitattributes`, `.gitignore`, `Cargo.lo
 | `hook.rs` | `rotproof stop-hook`, the hook Claude Code and Gemini CLI run when the agent stops, and the settings files that `rotproof create` writes for it |
 | `init.rs` | `rotproof init`: writing a project's declaration, once |
 | `create.rs` | `rotproof create`: making the layers and the records skeleton a project lacks |
-| `project.rs` | The files Rotproof writes outside `docs/`: the guide `.rotproof/AGENTS.md` |
+| `project.rs` | The files Rotproof writes outside `docs/`: the guide `.rotproof/AGENTS.md`, and the project's files, once |
 | `bundle.rs` | Reading `docs/` as one OKF bundle, and the files Rotproof generates in it (the index files and the rules) |
 | `schema.rs` | The frontmatter of each document type |
 | `frontmatter.rs` | Splitting a document into frontmatter and the sections of its body |

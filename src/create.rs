@@ -10,6 +10,8 @@
 //!   from the version that runs.
 //! - `.claude/settings.json` and `.gemini/settings.json` with the hook that runs `rotproof stop-hook` when the agent
 //!   stops (`hook.rs`), each when it does not exist. A project that has one already adds the hook to it by hand.
+//! - The project's files (`project.rs`: `AGENTS.md`, `README.md`, the pin of Rotproof, the CI workflow and others),
+//!   each when it does not exist. The project's name in them is its root directory's.
 //!
 //! - The fields the declaration lacks that Rotproof requires (`ADDED` in `layers.rs`): an upgrade of Rotproof that adds
 //!   a field fails `rotproof check` until `rotproof create` runs, and then only on what the new rules find. The
@@ -30,7 +32,7 @@ use crate::bundle::{Bundle, LOG};
 use crate::frontmatter::split;
 use crate::hook::SETTINGS;
 use crate::layers::{ADDED, DECLARATION, Declaration, Declared, MISSING, declaration};
-use crate::project::{GUIDE, guide};
+use crate::project::{GUIDE, guide, project_files};
 use crate::source::{exactly, read_source, relative_path};
 
 /// What `rotproof create` did.
@@ -42,6 +44,8 @@ pub struct Made {
     pub left_out: Vec<(String, String)>,
     /// The fields added to the declaration, as `name = value`
     pub added: Vec<String>,
+    /// What the stack does not have Rotproof write yet, and why
+    pub not_written: Option<String>,
 }
 
 /// Make what is missing at `root`. `Err` is a declaration that cannot be read, or a file that cannot be written.
@@ -86,11 +90,18 @@ pub fn create(root: &Path) -> Result<Made, String> {
     if read_source(&root.join(GUIDE)).ok().as_ref() != Some(&guide) {
         write(root, GUIDE, &guide, &mut made)?;
     }
-    for (path, text) in SETTINGS {
+    let name = project_name(root)?;
+    let (files, not_written) = project_files(&declared, &name);
+    let once = SETTINGS
+        .iter()
+        .map(|(path, text)| (*path, text.to_string()))
+        .chain(files);
+    for (path, text) in once {
         if !root.join(path).exists() {
-            write(root, path, text, &mut made)?;
+            write(root, path, &text, &mut made)?;
         }
     }
+    made.not_written = not_written;
     let (files, problems) = bundle.expected().map_err(|e| e.to_string())?;
     for (path, text) in files {
         if read_source(&path).ok().as_ref() != Some(&text) {
@@ -183,6 +194,18 @@ fn record_tags(root: &Path) -> Result<Vec<String>, String> {
         }
     }
     Ok(tags.into_iter().collect())
+}
+
+/// The project's name: the name of its root directory, which `--root .` gives only once resolved.
+fn project_name(root: &Path) -> Result<String, String> {
+    let full = root
+        .canonicalize()
+        .map_err(|e| format!("{}: {e}", root.display()))?;
+    Ok(full.file_name().map_or_else(
+        // The root of a drive has no name of its own
+        || "project".to_string(),
+        |name| name.to_string_lossy().into_owned(),
+    ))
 }
 
 fn write(root: &Path, path: &str, text: &str, made: &mut Made) -> Result<(), String> {

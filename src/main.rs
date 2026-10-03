@@ -98,6 +98,9 @@ fn create(root: &Path) -> Result<(), String> {
             rotproof::layers::DECLARATION
         );
     }
+    if let Some(why) = &made.not_written {
+        println!("not written: {why}");
+    }
     for (name, why) in made.left_out {
         println!("left out of the index, fix it: {name}: {why}");
     }
