@@ -19,7 +19,7 @@ fn stdout(out: &Output) -> String {
 fn repo() -> tempfile::TempDir {
     let root = declared("stack = \"none\"\nareas = [\"operations\"]\n");
     let docs = root.path().join("docs");
-    for folder in ["backlog", "specs", "done"] {
+    for folder in ["backlog", "specs"] {
         fs::create_dir_all(docs.join(folder)).unwrap();
     }
     root
@@ -115,7 +115,7 @@ fn each_broken_rule_fails_under_its_check() {
         ),
         (
             "every spec keeps the format",
-            "docs/done/x.md",
+            "docs/specs/x.md",
             "---\ntype: Spec\ntitle: A\ndescription: B.\nstatus: stable\n---\n".into(),
         ),
         (
@@ -244,24 +244,15 @@ fn an_epic_and_its_parts_are_checked_together() {
              # Resolution\n\nDone.\n"
         )
     };
-    // (the check that must name it, the epic's directory, the slug the part names)
+    // (the check that must name it, the epic's status, the slug the part names)
     let cases = [
-        ("an epic closes after its parts", "done", "big"),
-        ("every spec keeps the format", "specs", "no-such-spec"),
+        ("an epic closes after its parts", "deprecated", "big"),
+        ("every spec keeps the format", "stable", "no-such-spec"),
     ];
-    for (check, epic_folder, named) in cases {
+    for (check, status, named) in cases {
         let root = clean_repo();
         let r = root.path();
-        let status = if epic_folder == "done" {
-            "deprecated"
-        } else {
-            "stable"
-        };
-        fs::write(
-            r.join(format!("docs/{epic_folder}/big.md")),
-            spec("", status),
-        )
-        .unwrap();
+        fs::write(r.join("docs/specs/big.md"), spec("", status)).unwrap();
         fs::write(
             r.join("docs/specs/part.md"),
             spec(&format!("epic: {named}\n"), "stable"),
@@ -294,7 +285,6 @@ fn index_writes_every_index_file() {
         "docs/index.md",
         "docs/backlog/index.md",
         "docs/specs/index.md",
-        "docs/done/index.md",
     ] {
         assert!(root.path().join(path).is_file(), "{path} was not written");
         assert!(
@@ -383,10 +373,10 @@ fn index_fails_without_the_areas() {
 #[test]
 fn index_fails_without_a_spec_directory() {
     let root = repo();
-    fs::remove_dir(root.path().join("docs/done")).unwrap();
+    fs::remove_dir(root.path().join("docs/specs")).unwrap();
     let out = run(&["--root", &root_arg(root.path()), "index"]);
     assert!(!out.status.success());
-    assert!(String::from_utf8_lossy(&out.stderr).contains("done"));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("specs"));
 }
 
 /// Every file under `root`, from the root with `/`, and its text.
@@ -549,7 +539,7 @@ fn create_adds_the_fields_the_declaration_lacks() {
     .unwrap();
     fs::write(r.join("docs/backlog/one.md"), record("item", "operations")).unwrap();
     fs::write(r.join("docs/backlog/two.md"), record("item", "billing")).unwrap();
-    fs::write(r.join("docs/done/three.md"), record("spec", "records")).unwrap();
+    fs::write(r.join("docs/specs/three.md"), record("spec", "records")).unwrap();
     // A guide's tags are not areas
     fs::write(
         r.join("docs/backlog/guide.md"),

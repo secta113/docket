@@ -87,8 +87,8 @@ reads first), for example:
 
 ```markdown
 - **Before starting work, read `docs/backlog/index.md` and `docs/specs/index.md`, and open only the items and specs
-  that concern the work.** Read `docs/done/index.md` and `docs/log.md` when you need to know why something was
-  decided.
+  that concern the work.** Read the closed specs (under `# Closed` in `docs/specs/index.md`) and `docs/log.md` when
+  you need to know why something was decided.
 ```
 
 ## The stop hook
@@ -100,7 +100,7 @@ nothing in the backlog. `rotproof stop-hook` is the hook an agent runs when it s
 the message holds a phrase that leaves something open and `git status` shows no change in `docs/`, the hook sends the
 agent back once, asking it to record the finding or to say in one line where it already is. While the agent is
 continuing because of a stop hook, the hook lets it stop, so it never loops. A line that points at the records (the
-word `spec` or `backlog`, or a path in `docs/done/`) is not read: what it leaves open is recorded where it points. The
+word `spec` or `backlog`) is not read: what it leaves open is recorded where it points. The
 phrases are built in (Japanese and English); the agent decides what each one meant.
 
 `rotproof create` writes `.claude/settings.json` and `.gemini/settings.json` with the hook, each when it does not
@@ -162,12 +162,14 @@ docs/
     rules.md        generated: the backlog rules (type: Guide)
     index.md        generated
     <slug>.md       one item per file (type: Backlog Item)
-  specs/            specs in progress (type: Spec, status: draft or stable)
+  specs/            every spec, open or closed (type: Spec, status: draft, stable or deprecated)
     rules.md        generated: the spec rules (type: Guide)
     index.md        generated
-  done/             closed specs (type: Spec, status: deprecated)
-    index.md        generated
 ```
+
+A record stays where it was written when it closes: its status says it is closed, and the index lists it under
+`# Closed`. Its path, and every link to it, never changes, so closing a record is a change to that record and its
+index line only.
 
 Every backlog item and every spec belongs to exactly one area: its only tag, one of the `areas` the declaration
 lists. The index files group by area, in the order of `areas`, so the project puts the largest or most active area
@@ -190,8 +192,8 @@ epic: template-multi-stack
 The two are independent: an area says where a record belongs and never closes, an epic says which piece of work a
 spec is part of and closes when the work is finished. A part may be in another area than its epic. A spec that cannot
 name one area mixes two, so it is split into one part per area, and the epic ties the parts back into one piece of
-work. In an index, a part in the same area and the same directory as its epic is listed under it, indented; any other
-part is listed under its own area with `Epic: [<title>](...)` after its line, so each spec appears once.
+work. In an index, a part in the same area as its epic, and open or closed as its epic is, is listed under it,
+indented; any other part is listed on its own with `Epic: [<title>](...)` after its line, so each spec appears once.
 
 A backlog item has this frontmatter and these body headings:
 
@@ -239,8 +241,8 @@ stale_after: 2027-01-01T00:00:00+09:00   # optional: when to measure the state a
   are strings. For `rust` and `typescript`, the check says that it did not run.
 
 - **The bundle is there:** `docs/`, `docs/index.md`, `docs/backlog/`, `docs/backlog/rules.md`, `docs/specs/`,
-  `docs/specs/rules.md` and `docs/done/` exist, and the declaration with its `areas` can be read. Without them every other check would pass
-  with nothing checked.
+  and `docs/specs/rules.md` exist, and the declaration with its `areas` can be read. Without them every other check
+  would pass with nothing checked.
 - **Every name is compared exactly,** wherever Rotproof looks for a file or a directory: a link's target, the files
   above, the layers and the declaration. Rotproof reads the names the directories hold instead of asking the
   operating system, which on Windows also finds `README.md` for `readme.md`, `README.md.`, `README.md `, a stream
@@ -269,13 +271,12 @@ stale_after: 2027-01-01T00:00:00+09:00   # optional: when to measure the state a
   does not count. The text is one name exactly as defined (``[`render_index`](../tests/bundle.py)``), not a call
   (`render_index()`) or a dotted path (`Bundle.render`); when it names nothing, the message says which name to write
   or lists the names the file defines.
-- **Every spec keeps the format:** `title`, `description`, `status` and exactly one declared area in `tags`, a status
-  that matches its directory, and a non-empty `# Resolution` once it is closed. `epic`, when present, is the slug of
-  another spec in `docs/specs/` or `docs/done/` (not a path, not a backlog item or a guide, not the spec itself), and
-  that spec has no `epic` of its own: one level only. A slug is in one of the two directories, never both. A spec
-  that breaks one of these is left out of the index files.
-- **An epic closes after its parts:** an epic in `docs/done/` has no part in `docs/specs/`. A part that is dropped
-  closes as dropped, as any spec does.
+- **Every spec keeps the format:** `title`, `description`, `status` and exactly one declared area in `tags`, and a
+  non-empty `# Resolution` once it is closed. `epic`, when present, is the slug of another spec in `docs/specs/` (not
+  a path, not a backlog item or a guide, not the spec itself), and that spec has no `epic` of its own: one level only.
+  A spec that breaks one of these is left out of the index files.
+- **An epic closes after its parts:** no closed epic has an open part. A part that is dropped closes as dropped, as
+  any spec does.
 - **The log exists, points only at backlog items that exist** (`backlog/<slug>.md`, written with `/` or `\`, the
   slug percent-encoded or not), and its second-level headings are dates, newest first. Below the title, the log is
   a flat list of entries grouped under the dates (OKF 0.2, section 9): every entry is a list item, and its indented

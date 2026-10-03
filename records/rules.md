@@ -53,7 +53,9 @@ Body headings:
   dates, so a link to a log entry points to its day and names the entry in its text
   (`[log.md: <task name>](/log.md#2026-10-01)`). A link to a Python file names the function or class in its text
   (``[`render_index`](../../src/bundle.py)``). The check fails when a link in `# Details` does not resolve.
-- **Closed items stay.** Set `status: deprecated` and write `# Resolution`. Deleting an item breaks the references to it.
+- **Closed items stay where they are.** Set `status: deprecated` and write `# Resolution`; the index lists the item
+  under `# Closed`. Deleting or moving an item breaks every link to it, and rewriting the links puts lines that have
+  nothing to do with the closing into its review.
 - **"Next time someone touches X" is not a trigger anyone will see.** People who touch X do not open the backlog.
   Prefer a moment when the backlog is opened anyway, such as starting a piece of work or a deploy. If the trigger can
   only be X, search `docs/backlog/` for X before committing a change to X.

@@ -106,11 +106,9 @@ pub const SETTINGS: [(&str, &str); 2] = [
 ];
 
 // A line that points at the records: the word spec, specs or backlog standing alone in ASCII (so `spec に`,
-// `docs/specs/x.md` and `Backlog` count, and `specific` or `inspect` do not), or a closed spec in docs/done/. Matched
-// against the line in lower case
-static RECORDS: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?:^|[^a-z0-9_])(?:specs?|backlog)(?:[^a-z0-9_]|$)|docs/done/").unwrap()
-});
+// `docs/specs/x.md` and `Backlog` count, and `specific` or `inspect` do not). Matched against the line in lower case
+static RECORDS: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?:^|[^a-z0-9_])(?:specs?|backlog)(?:[^a-z0-9_]|$)").unwrap());
 
 /// What in a report leaves something open, matched in any case. Words common in plain prose ("later") are left out:
 /// a hook that fires on every message is answered without reading.
@@ -300,7 +298,6 @@ mod tests {
             "Backlog: the PATH is not checked",
             "- [x.md](docs/specs/x.md): 未確認",
             "閉じた [y.md](/backlog/y.md) は未着手のまま",
-            "[z.md](docs/done/z.md) で見送った",
         ] {
             assert_eq!(open_phrases(line), Vec::<&str>::new(), "{line}");
         }

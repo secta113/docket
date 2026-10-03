@@ -61,11 +61,12 @@ static OWN_FIELDS: LazyLock<Vec<(&'static str, &'static str)>> = LazyLock::new(|
     own
 });
 
-/// Directory -> the statuses a spec in it may have. The directory answers only "current or finished"
-pub const SPEC_FOLDERS: [(&str, &[Status]); 2] = [
-    ("specs", &[Status::Draft, Status::Stable]),
-    ("done", &[Status::Deprecated]),
-];
+/// Directory -> the statuses a spec in it may have. Every spec stays in `docs/specs/` when it closes, so its path, and
+/// every link to it, never changes: the status alone says it is closed
+pub const SPEC_FOLDERS: [(&str, &[Status]); 1] = [(
+    "specs",
+    &[Status::Draft, Status::Stable, Status::Deprecated],
+)];
 
 // OKF actors (section 7): `<producer>/<version>` for an agent, `human:<id>` for a person, `process:<id>`. OKF does not
 // limit the characters of `<id>` (its own samples use `human:jsmith@acme`), so only whitespace is excluded
@@ -663,8 +664,8 @@ fn text_list(value: &Yaml) -> Result<Vec<String>, String> {
     }
 }
 
-/// The slug of a document: its file name without `.md`, which never changes once the file exists. Not a path, so it
-/// still names the document after a move between `docs/specs/` and `docs/done/`.
+/// The slug of a document: its file name without `.md`, which never changes once the file exists. Not a path: the slug
+/// is what commit messages and other documents name it by.
 fn slug(value: &Yaml) -> Result<String, String> {
     let s = one_line(value)?;
     if s.contains(['/', '\\']) {
@@ -1239,9 +1240,9 @@ Something.
         let closed =
             SPEC.replace("status: stable", "status: deprecated") + "\n# Resolution\n\nDone.\n";
         assert!(
-            spec("done", &closed).is_ok(),
+            spec("specs", &closed).is_ok(),
             "{:?}",
-            spec("done", &closed).err()
+            spec("specs", &closed).err()
         );
     }
 
@@ -1249,11 +1250,6 @@ Something.
     fn a_broken_spec_is_caught() {
         let closed = SPEC.replace("status: stable", "status: deprecated");
         let bad = [
-            (
-                "specs",
-                "closed spec still in specs/",
-                closed.clone() + "\n# Resolution\n\nDone.\n",
-            ),
             (
                 "specs",
                 "no description",
@@ -1271,16 +1267,16 @@ Something.
             ),
             // A spec has exactly one area, as a backlog item does
             ("specs", "no tag", SPEC.replace("tags: [operations]\n", "")),
-            // An epic is named by its slug, which survives the move to done/
+            // An epic is named by its slug, not by a path
             (
                 "specs",
                 "an epic named by its path",
-                SPEC.replace("status: stable", "status: stable\nepic: /done/big.md"),
+                SPEC.replace("status: stable", "status: stable\nepic: /specs/big.md"),
             ),
             (
                 "specs",
                 "an epic named by its path without .md",
-                SPEC.replace("status: stable", "status: stable\nepic: done/big"),
+                SPEC.replace("status: stable", "status: stable\nepic: specs/big"),
             ),
             (
                 "specs",
@@ -1320,8 +1316,7 @@ Something.
                 "no frontmatter",
                 "# Goals\n\nSomething.\n".to_string(),
             ),
-            ("done", "open spec in done/", SPEC.to_string()),
-            ("done", "closed without a resolution", closed),
+            ("specs", "closed without a resolution", closed),
         ];
         for (folder, name, text) in bad {
             assert!(spec(folder, &text).is_err(), "{folder}: {name} passed");

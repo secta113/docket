@@ -10,11 +10,10 @@
 //!   backlog item the log points to exists.
 //! - **Every record has one declared area**: the areas in `.config/rotproof.toml` are distinct headings, and the one
 //!   tag of every backlog item and spec is one of them.
-//! - **An epic closes after its parts**: a part's `epic` names another spec, one level deep, and no epic in
-//!   `docs/done/` has a part in `docs/specs/`.
-//! - **`docs/` is one OKF bundle**: every document is a known type in the directory for its type, a spec sits in the
-//!   directory for its status, every file Rotproof generates (the index files and the rules) equals what
-//!   `rotproof index` writes, and no spec sits at the root.
+//! - **An epic closes after its parts**: a part's `epic` names another spec, one level deep, and no closed epic has
+//!   an open part.
+//! - **`docs/` is one OKF bundle**: every document is a known type in the directory for its type, every file Rotproof
+//!   generates (the index files and the rules) equals what `rotproof index` writes, and no spec sits at the root.
 //! - **The log keeps the OKF log structure**: every second-level heading is a date, newest first, and the entries
 //!   are a flat list of list items under those dates.
 //!
@@ -38,11 +37,10 @@ use crate::markdown::{broken, heading, links, visible};
 use crate::source::{exactly, read_source, relative_path};
 
 /// Directory (relative to docs/, "" for the root) -> the document types allowed in it
-const TYPES: [(&str, &[&str]); 4] = [
+const TYPES: [(&str, &[&str]); 3] = [
     ("", &["Guide"]),
     ("backlog", &["Backlog Item", "Guide"]),
     ("specs", &["Spec", "Guide"]),
-    ("done", &["Spec"]),
 ];
 
 // How the log points to a backlog item. Matched without `docs/`, so pointers written while the backlog was at the
@@ -234,7 +232,7 @@ fn records(root: &Path) -> io::Result<Vec<Finding>> {
         "no spec sits at the repository root",
         root_specs(&names)
             .into_iter()
-            .map(|name| format!("specs go in docs/specs/ or docs/done/: {name}"))
+            .map(|name| format!("specs go in docs/specs/: {name}"))
             .collect(),
     );
     Ok(found)
@@ -690,7 +688,6 @@ mod tests {
             "backlog/index.md",
             "backlog/item.md",
             "specs/index.md",
-            "done/index.md",
             "assets/diagram.png",
         ]);
         assert_eq!(unread(docs.path()).unwrap(), BTreeMap::new());
@@ -702,6 +699,8 @@ mod tests {
             // Reserved names where Rotproof neither writes nor reads them
             "extra/index.md",
             "specs/deeper/index.md",
+            // docs/done/ is no longer read: closed specs stay in docs/specs/
+            "done/index.md",
             "backlog/log.md",
             // Markdown that is not named .md
             "backlog/item.MD",

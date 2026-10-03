@@ -71,7 +71,7 @@ pub fn create(root: &Path) -> Result<Made, String> {
     }
 
     let bundle = Bundle::new(root, declared.declaration.areas.clone());
-    for folder in ["backlog", "specs", "done"] {
+    for folder in ["backlog", "specs"] {
         let dir = bundle.docs.join(folder);
         fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     }
@@ -148,7 +148,7 @@ fn complete(root: &Path) -> Result<Option<(String, Vec<String>)>, String> {
 fn record_tags(root: &Path) -> Result<Vec<String>, String> {
     let bundle = Bundle::new(root, Vec::new());
     let mut tags = BTreeSet::new();
-    for folder in ["backlog", "specs", "done"] {
+    for folder in ["backlog", "specs"] {
         if !bundle.docs.join(folder).is_dir() {
             continue;
         }
