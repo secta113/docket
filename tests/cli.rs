@@ -513,6 +513,128 @@ fn create_respects_absent_and_leaves_what_it_does_not_own() {
     assert!(check.status.success(), "{}", stdout(&check));
 }
 
+/// A backlog item or a spec that keeps every rule, with `tag` as its area.
+fn record(kind: &str, tag: &str) -> String {
+    match kind {
+        "item" => format!(
+            "---\ntype: Backlog Item\ntitle: X\ndescription: Y.\ntags: [{tag}]\nstatus: stable\nfiled: 2026-10-01\n\
+             verified: {{by: human:a, at: 2026-10-01T10:00:00+09:00}}\ndeadline_kind: none\ndeadline: an alarm\n---\n\n\
+             # Trigger\n\nX.\n\n# State\n\nY.\n\n# Details\n\n[log](/log.md)\n"
+        ),
+        _ => format!(
+            "---\ntype: Spec\ntitle: X\ndescription: Y.\ntags: [{tag}]\nstatus: deprecated\n---\n\n# Resolution\n\nDone.\n"
+        ),
+    }
+}
+
+#[test]
+fn create_adds_the_fields_the_declaration_lacks() {
+    // A declaration an older docket wrote, before areas existed, with comments and values of the project's own
+    let older = "# Ours\nstack = \"python\"\nabsent = [\"ui\"]  # no UI here\n";
+    let root = declared("stack = \"python\"\nareas = [\"a\"]\nabsent = [\"ui\"]\n");
+    let r = root.path();
+    let arg = root_arg(r);
+    assert!(run(&["--root", &arg, "create"]).status.success());
+    fs::write(
+        r.join("docs/log.md"),
+        "# Log\n\n## 2026-10-02\n\n* Something\n",
+    )
+    .unwrap();
+    fs::write(r.join("docs/backlog/one.md"), record("item", "operations")).unwrap();
+    fs::write(r.join("docs/backlog/two.md"), record("item", "billing")).unwrap();
+    fs::write(r.join("docs/done/three.md"), record("spec", "records")).unwrap();
+    // A guide's tags are not areas
+    fs::write(
+        r.join("docs/backlog/guide.md"),
+        "---\ntype: Guide\ntitle: G\ndescription: H.\ntags: [howto]\n---\n\nText.\n",
+    )
+    .unwrap();
+    fs::write(r.join(".config/docket.toml"), older).unwrap();
+
+    let check = run(&["--root", &arg, "check"]);
+    assert_eq!(check.status.code(), Some(1));
+    assert!(
+        stdout(&check).contains("missing field `areas`: run `docket create`, which adds it"),
+        "{}",
+        stdout(&check)
+    );
+
+    let out = run(&["--root", &arg, "create"]);
+    assert!(out.status.success(), "{}", stdout(&out));
+    assert!(
+        stdout(&out).contains(
+            "added to .config/docket.toml: areas = [\"billing\", \"operations\", \"records\"]"
+        ),
+        "{}",
+        stdout(&out)
+    );
+    let now = fs::read_to_string(r.join(".config/docket.toml")).unwrap();
+    // What was there is kept, byte for byte, and the new field says what it is and where its value came from
+    assert!(now.starts_with(older), "{now}");
+    assert!(
+        now.contains("# The areas the records are grouped by")
+            && now.contains("# Added by `docket create` with the tags the records use"),
+        "{now}"
+    );
+    let check = run(&["--root", &arg, "check"]);
+    assert!(check.status.success(), "{}", stdout(&check));
+
+    // A value that is present is never changed, and a second run adds nothing
+    let edited = now.replace(
+        "[\"billing\", \"operations\", \"records\"]",
+        "[\"records\", \"operations\", \"billing\"]",
+    );
+    fs::write(r.join(".config/docket.toml"), &edited).unwrap();
+    let again = run(&["--root", &arg, "create"]);
+    assert!(!stdout(&again).contains("added to"), "{}", stdout(&again));
+    assert_eq!(
+        fs::read_to_string(r.join(".config/docket.toml")).unwrap(),
+        edited
+    );
+}
+
+#[test]
+fn create_keeps_the_line_endings_of_the_declaration() {
+    // Checked out with CRLF, as git does on Windows: only the added lines are new
+    let older = "# Ours\r\nstack = \"none\"\r\n";
+    let root = repo();
+    fs::write(root.path().join(".config/docket.toml"), older).unwrap();
+    let out = run(&["--root", &root_arg(root.path()), "create"]);
+    assert!(out.status.success(), "{}", stdout(&out));
+    let now = fs::read_to_string(root.path().join(".config/docket.toml")).unwrap();
+    assert!(now.starts_with(older), "{now:?}");
+    assert!(now.contains("\r\nareas = []\r\n"), "{now:?}");
+    assert!(!now.replace("\r\n", "").contains('\n'), "{now:?}");
+}
+
+#[test]
+fn create_leaves_a_declaration_it_cannot_complete_as_it_was() {
+    // Adding areas would not make these read: the declaration stays as the project wrote it, and nothing is made
+    for (declaration, said) in [
+        ("stack = \"cobol\"\n", "unknown stack"),
+        (
+            "stack = \"python\"\nabsent = [\"service\"]\n",
+            "does not have",
+        ),
+        ("areas = [\"a\"]\n", "missing field `stack`"),
+        ("stack = \"python\"\nextra = 1\n", "unknown field"),
+    ] {
+        let root = declared(declaration);
+        let out = run(&["--root", &root_arg(root.path()), "create"]);
+        assert_eq!(out.status.code(), Some(2), "{declaration}");
+        assert!(
+            String::from_utf8_lossy(&out.stderr).contains(said),
+            "{declaration}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert_eq!(
+            fs::read_to_string(root.path().join(".config/docket.toml")).unwrap(),
+            declaration
+        );
+        assert!(!root.path().join("docs").exists(), "{declaration}");
+    }
+}
+
 #[test]
 fn create_fails_without_a_declaration_it_can_read() {
     let cases = [
@@ -529,8 +651,7 @@ fn create_fails_without_a_declaration_it_can_read() {
             Some("stack = \"python\"\nareas = [\"a\"]\nabsnet = []\n"),
             "unknown field",
         ),
-        // A declaration written before areas existed names the field it lacks
-        (Some("stack = \"python\"\n"), "missing field `areas`"),
+        // A declaration written before areas existed gets the field instead: create_adds_the_fields_the_declaration_lacks
     ];
     for (declaration, said) in cases {
         let root = match declaration {

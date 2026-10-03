@@ -81,6 +81,9 @@ fn create(root: &Path) -> Result<(), String> {
     for path in &made.written {
         println!("wrote {path}");
     }
+    for field in &made.added {
+        println!("added to {}: {field}", docket::layers::DECLARATION);
+    }
     if made.written.is_empty() {
         println!(
             "nothing to make: the tree has what {} declares",

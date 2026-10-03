@@ -64,6 +64,11 @@ what is missing: a layer that is neither present nor declared absent, `docs/log.
 docket generates. It never overwrites a file it does not generate, and never moves or deletes one. Nothing runs it on
 its own, so a layer removed by mistake fails `docket check` instead of coming back.
 
+Run it also after upgrading docket. When a newer docket requires a field the declaration lacks, `docket check` fails
+and says so, and `docket create` adds the field under a comment that says what it is and where its first value came
+from (`areas` gets the tags the records use, sorted by name), keeping every comment and value already there. A value
+that is present is never changed, so an upgrade fails only on what the new rules find.
+
 The index files only help if your agent reads them. Point it at them in your `AGENTS.md` (or whatever file your agent
 reads first), for example:
 

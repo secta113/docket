@@ -6,16 +6,25 @@
 //! - The records skeleton: the directories of `docs/`, `docs/log.md` with its title when it does not exist, and the
 //!   generated files (the index files, `docs/backlog/rules.md` and `docs/specs/rules.md`), which docket rewrites.
 //!
-//! It never overwrites a file it does not generate, and never moves or deletes one. It runs when a project starts, and
+//! - The fields the declaration lacks that docket requires (`ADDED` in `layers.rs`): an upgrade of docket that adds a
+//!   field fails `docket check` until `docket create` runs, and then only on what the new rules find. The comments and
+//!   the values already in the declaration are kept, and a value that is present is never changed.
+//!
+//! It never overwrites a file it does not generate, apart from adding those fields, and never moves or deletes one. It runs when a project starts, and
 //! again when its declaration is changed on purpose; it never runs by itself, so a layer removed by mistake fails the
 //! check instead of coming back.
 
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
 
+use toml_edit::{Array, DocumentMut, Item, Value};
+use yaml_rust2::Yaml;
+
 use crate::bundle::{Bundle, LOG};
-use crate::layers::{DECLARATION, Declared, MISSING, declaration};
-use crate::source::{read_source, relative_path};
+use crate::frontmatter::split;
+use crate::layers::{ADDED, DECLARATION, Declaration, Declared, MISSING, declaration};
+use crate::source::{exactly, read_source, relative_path};
 
 /// What `docket create` did.
 #[derive(Debug, Default)]
@@ -24,16 +33,30 @@ pub struct Made {
     pub written: Vec<String>,
     /// Documents left out of the index files: name -> why
     pub left_out: Vec<(String, String)>,
+    /// The fields added to the declaration, as `name = value`
+    pub added: Vec<String>,
 }
 
 /// Make what is missing at `root`. `Err` is a declaration that cannot be read, or a file that cannot be written.
 pub fn create(root: &Path) -> Result<Made, String> {
+    let mut made = Made::default();
     let declared = match declaration(root).map_err(|e| e.to_string())? {
         None => return Err(MISSING.into()),
-        Some(Err(why)) => return Err(format!("{DECLARATION}: {why}")),
+        Some(Err(why)) => match complete(root)? {
+            // Written only once the completed declaration reads and fits its stack, so a declaration that fails for
+            // another reason is left as it was
+            Some((text, added)) => {
+                let declaration: Declaration =
+                    toml::from_str(&text).map_err(|e| format!("{DECLARATION}: {}", e.message()))?;
+                let declared = Declared::new(declaration).map_err(|found| found.join("\n"))?;
+                write(root, DECLARATION, &text, &mut made)?;
+                made.added = added;
+                declared
+            }
+            None => return Err(format!("{DECLARATION}: {why}")),
+        },
         Some(Ok(declaration)) => Declared::new(declaration).map_err(|found| found.join("\n"))?,
     };
-    let mut made = Made::default();
     for place in &declared.places {
         // A level whose layer is declared absent is absent too. Otherwise its layer was made just before it
         if declared.is_absent(place) || root.join(&place.path).exists() {
@@ -60,6 +83,88 @@ pub fn create(root: &Path) -> Result<Made, String> {
     }
     made.left_out = problems.into_iter().collect();
     Ok(made)
+}
+
+/// The declaration with every field of [`ADDED`] it lacks, each under its comment, and the fields added as
+/// `name = value`. `None` when it lacks none, or is not TOML: then its own error stands.
+///
+/// The comments and the values already there are kept. A value that is present is never changed.
+fn complete(root: &Path) -> Result<Option<(String, Vec<String>)>, String> {
+    let Ok(path) = exactly(root, DECLARATION) else {
+        return Ok(None);
+    };
+    let text = read_source(&path).map_err(|e| format!("{DECLARATION}: {e}"))?;
+    let Ok(mut document) = text.parse::<DocumentMut>() else {
+        return Ok(None);
+    };
+    let mut added = Vec::new();
+    for field in &ADDED {
+        if document.contains_key(field.name) {
+            continue;
+        }
+        let value = match field.name {
+            "areas" => record_tags(root)?,
+            name => unreachable!("every field docket adds has a rule for its first value: {name}"),
+        };
+        let mut array = Array::new();
+        array.extend(value.iter().map(String::as_str));
+        document.insert(field.name, Item::Value(Value::Array(array)));
+        let mut key = document
+            .key_mut(field.name)
+            .expect("the field was inserted just before");
+        key.leaf_decor_mut()
+            .set_prefix(format!("\n{}{}", field.comment, field.first_value));
+        added.push(format!("{} = {}", field.name, document[field.name]));
+    }
+    if added.is_empty() {
+        return Ok(None);
+    }
+    // In the line endings the project wrote: `read_source` gave every line `\n`, and a declaration checked out with
+    // CRLF would otherwise change on every line, not only where a field was added
+    let raw = fs::read_to_string(&path).map_err(|e| format!("{DECLARATION}: {e}"))?;
+    let text = document.to_string();
+    Ok(Some((
+        if raw.contains("\r\n") {
+            text.replace('\n', "\r\n")
+        } else {
+            text
+        },
+        added,
+    )))
+}
+
+/// Every tag the backlog items and specs use, sorted by name: the first value of `areas`, so the records that fit their
+/// one-area rule keep fitting once the field exists. A document that cannot be read is left to `docket check`.
+fn record_tags(root: &Path) -> Result<Vec<String>, String> {
+    let bundle = Bundle::new(root, Vec::new());
+    let mut tags = BTreeSet::new();
+    for folder in ["backlog", "specs", "done"] {
+        if !bundle.docs.join(folder).is_dir() {
+            continue;
+        }
+        let docs = bundle.read_folder(folder).map_err(|e| e.to_string())?;
+        for text in docs.values() {
+            let Ok((meta, _)) = split(text) else {
+                continue;
+            };
+            let kind = meta
+                .get(&Yaml::String("type".into()))
+                .and_then(Yaml::as_str);
+            if !matches!(kind, Some("Backlog Item" | "Spec")) {
+                continue;
+            }
+            match meta.get(&Yaml::String("tags".into())) {
+                Some(Yaml::Array(list)) => {
+                    tags.extend(list.iter().filter_map(Yaml::as_str).map(String::from))
+                }
+                Some(Yaml::String(tag)) => {
+                    tags.insert(tag.clone());
+                }
+                _ => {}
+            }
+        }
+    }
+    Ok(tags.into_iter().collect())
 }
 
 fn write(root: &Path, path: &str, text: &str, made: &mut Made) -> Result<(), String> {

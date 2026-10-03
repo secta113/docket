@@ -306,10 +306,40 @@ pub fn declaration(root: &Path) -> io::Result<Option<Result<Declaration, String>
     };
     let text = fs::read_to_string(&path)
         .map_err(|e| io::Error::new(e.kind(), format!("{DECLARATION}: {e}")))?;
-    Ok(Some(
-        toml::from_str(&text).map_err(|e| e.message().to_string()),
-    ))
+    Ok(Some(toml::from_str(&text).map_err(|e| {
+        let why = e.message().to_string();
+        // A field a newer docket requires: the upgrade is to run `docket create`, not to look the field up
+        match ADDED
+            .iter()
+            .find(|f| why == format!("missing field `{}`", f.name))
+        {
+            Some(_) => format!("{why}: run `docket create`, which adds it"),
+            None => why,
+        }
+    })))
 }
+
+/// What `areas` is, as the declaration says it above the field.
+const AREAS_COMMENT: &str = "# The areas the records are grouped by, in this order, such as \"billing\" or \"records\". Every backlog\n\
+                             # item and spec has exactly one of them in tags, and the index files group by them\n";
+
+/// A field the declaration requires that `docket create` adds when it is missing, so a declaration written by an older
+/// docket fails only until the upgrade runs `docket create`, never on its shape.
+pub struct Added {
+    pub name: &'static str,
+    /// What it is, as `docket init` writes it above the field
+    pub comment: &'static str,
+    /// Where the first value came from, and what to do with it, written under the comment
+    pub first_value: &'static str,
+}
+
+/// Every field `docket create` adds. Each has a rule for its first value in `create.rs`.
+pub const ADDED: [Added; 1] = [Added {
+    name: "areas",
+    comment: AREAS_COMMENT,
+    first_value: "# Added by `docket create` with the tags the records use, sorted by name: put them in the order the\n\
+                  # index files should show them\n",
+}];
 
 /// Every stack a declaration may name, `none` last.
 pub fn known_stacks() -> Vec<&'static str> {
@@ -326,9 +356,7 @@ pub fn declaration_text(stack: &str) -> String {
     let head = "# What docket keeps in this project. Edit it, then run `docket create` to make what is missing.\n\
                 # `docket check` fails when the tree and this file differ, either way.\n";
     let stacks = known_stacks().join(" | ");
-    let areas = "# The areas the records are grouped by, in this order, such as \"billing\" or \"records\". Every backlog\n\
-                 # item and spec has exactly one of them in tags, and the index files group by them\n\
-                 areas = []\n";
+    let areas = format!("{AREAS_COMMENT}areas = []\n");
     if stack == RECORDS_ONLY {
         return format!(
             "{head}\n# {stacks}. \"none\": records only (docs/), no layers to make or check\n\
