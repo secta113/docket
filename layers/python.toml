@@ -7,7 +7,7 @@
 # fails, unless it sits in a path below or the project lists it in `unchecked`.
 scope = ""
 code = "*.py"
-not_layers = ["tests", "ci.py"]
+not_layers = ["tests"]
 # Each line of the documentation starts with this
 doc_prefix = ""
 

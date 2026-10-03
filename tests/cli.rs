@@ -1210,7 +1210,6 @@ fn code_that_is_not_the_projects_is_not_looked_at() {
         "venv/Lib/site-packages/pkg/__init__.py",
         ".tox/x.py",
         "tests/test_x.py",
-        "ci.py",
         "scripts/tool.py",
         "notes/readme.md",
     ] {
@@ -1222,6 +1221,11 @@ fn code_that_is_not_the_projects_is_not_looked_at() {
     );
     let out = run(&["--root", &root_arg(r), "check"]);
     assert!(out.status.success(), "{}", stdout(&out));
+    // A CI script is code like any other: Rotproof makes none, so it names none as an exception
+    plant_file(r, "ci.py");
+    let out = run(&["--root", &root_arg(r), "check"]);
+    assert_eq!(out.status.code(), Some(1), "{}", stdout(&out));
+    assert!(stdout(&out).contains("ci.py"), "{}", stdout(&out));
 }
 
 #[test]

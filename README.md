@@ -167,7 +167,7 @@ is written once per stack:
 
 | Stack | A layer is | A `ui` level is | Code Rotproof looks at |
 |---|---|---|---|
-| `python` | `<layer>/__init__.py`, the role as its docstring | `ui/<level>/__init__.py` | `.py` files anywhere (`.PY` too), except `tests/` and `ci.py` |
+| `python` | `<layer>/__init__.py`, the role as its docstring | `ui/<level>/__init__.py` | `.py` files anywhere (`.PY` too), except `tests/` |
 | `typescript` | `src/<layer>/index.ts`, the role as a doc comment | `src/ui/<level>/index.ts` (React) | every file in `src/` |
 | `rust` | a crate, `crates/<layer>/` (`handler` a binary), the role as `//!` | none: Rust has no `ui` yet | every crate in `crates/` |
 
