@@ -5,8 +5,11 @@ on:
   pull_request:
 
 jobs:
+  # Each job may run about five times its slowest run, rounded up to ten minutes. A job that hangs otherwise runs for
+  # GitHub's default of six hours
   ci:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     # The same base image as the Dockerfile. The components come from rust-toolchain.toml, as in the Dockerfile
     container: rust:1.98.1
     steps:
@@ -21,6 +24,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
       - run: rustup toolchain install
