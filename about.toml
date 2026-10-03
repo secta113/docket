@@ -1,0 +1,18 @@
+# What cargo-about reads to write THIRD-PARTY-LICENSES.txt (`cargo xtask licenses`, with the template about.hbs).
+# The crates the binary links are the normal dependencies on every platform, so one file serves every wheel and a new
+# platform cannot leave a crate out. Build and dev dependencies are not linked into the binary.
+ignore-build-dependencies = true
+ignore-dev-dependencies = true
+
+# The licenses docket may ship, in the order cargo-about picks among the choices a crate offers (MIT for a crate that
+# is MIT OR Apache-2.0). A crate whose license cannot be met from this list fails the generation, so a new license is
+# decided here, in a commit of its own, never shipped unseen. Keep it to what a crate needs: an entry nothing uses
+# would let a new license in without a decision.
+accepted = [
+    "MIT",
+    "Apache-2.0",
+    "Zlib",
+    "BSD-3-Clause",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+]

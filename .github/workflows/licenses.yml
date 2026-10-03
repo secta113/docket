@@ -1,0 +1,31 @@
+name: Licenses
+
+# THIRD-PARTY-LICENSES.txt against what cargo-about writes. Building cargo-about takes minutes, so this runs only when
+# what the text is made from changes. Every run of CI checks the list of crates without it (`cargo xtask ci`), so a
+# change to the dependencies fails there until the file is written again
+on:
+  push:
+    paths: &paths
+      - Cargo.lock
+      - Cargo.toml
+      - about.toml
+      - about.hbs
+      - THIRD-PARTY-LICENSES.txt
+      - Dockerfile
+      - xtask/**
+      - .github/workflows/licenses.yml
+  pull_request:
+    paths: *paths
+  workflow_dispatch:
+
+jobs:
+  licenses:
+    runs-on: ubuntu-latest
+    # About five times the slowest run, rounded up to ten minutes, as in CI
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup toolchain install
+      # The version the Dockerfile installs: `cargo xtask ci` fails when the two differ
+      - run: cargo install --locked --features cli cargo-about@0.9.2
+      - run: cargo xtask licenses --check

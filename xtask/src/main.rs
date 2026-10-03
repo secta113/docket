@@ -1,11 +1,14 @@
 //! The CI entry point. Run `cargo xtask ci` both on a developer machine and in GitHub Actions, so that the two cannot
-//! disagree about which checks ran.
+//! disagree about which checks ran. `cargo xtask licenses` writes `THIRD-PARTY-LICENSES.txt` with cargo-about, and
+//! `cargo xtask licenses --check` checks it against what cargo-about writes (`licenses.rs` says why that is apart).
 //!
 //! Cargo is the one that runs this (`$CARGO`), never another version on `PATH`. **A missing tool is a failure.**
 //! Skipping it would let CI pass with a check silently gone.
 
 mod drift;
+mod licenses;
 
+use std::collections::BTreeSet;
 use std::env;
 use std::fs;
 use std::io::Read;
@@ -45,6 +48,15 @@ const CHECKS: &[(&str, Duration, &[&str])] = &[
 
 /// How long `git ls-files` may run. It takes milliseconds
 const GIT_LIMIT: Duration = Duration::from_mins(1);
+
+/// How long `cargo tree` may run. On its first run it downloads the crates of the other platforms
+const TREE_LIMIT: Duration = Duration::from_mins(2);
+
+/// How long `cargo fetch` may run before cargo-about reads the license files of the crates of every platform
+const FETCH_LIMIT: Duration = Duration::from_mins(5);
+
+/// How long cargo-about may run, offline
+const ABOUT_LIMIT: Duration = Duration::from_mins(2);
 
 fn run(cargo: &str, name: &str, limit: Duration, args: &[&str]) -> bool {
     println!("\n--- {name} ---\n$ cargo {}", args.join(" "));
@@ -92,7 +104,7 @@ fn drain(mut pipe: impl Read + Send + 'static) -> thread::JoinHandle<Result<Vec<
         let mut bytes = Vec::new();
         pipe.read_to_end(&mut bytes)
             .map(|_| bytes)
-            .map_err(|e| format!("cannot read the output of git: {e}"))
+            .map_err(|e| format!("cannot read the output of a command: {e}"))
     })
 }
 
@@ -114,30 +126,48 @@ fn read(root: &Path, file: &str) -> Result<String, String> {
     fs::read_to_string(root.join(file)).map_err(|e| format!("cannot read {file}: {e}"))
 }
 
-/// The tracked files, `/`-separated. In the CI container the checkout belongs to another user, and git refuses to read
-/// such a repository unless it is marked safe; this only reads, so it is marked safe for this one command
-fn tracked(root: &Path) -> Result<Vec<String>, String> {
-    let mut child = Command::new("git")
-        .args(["-c", "safe.directory=*", "ls-files"])
+/// What a command prints, run in the repository, waited for no longer than `limit`. `name` names it in errors. A
+/// command that fails, cannot run or runs past its limit is an error, with what it printed to standard error
+fn output(
+    root: &Path,
+    name: &str,
+    limit: Duration,
+    program: &str,
+    args: &[&str],
+) -> Result<String, String> {
+    let mut child = Command::new(program)
+        .args(args)
         .current_dir(root)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|e| format!("git could not run: {e}"))?;
+        .map_err(|e| format!("{name} could not run: {e}"))?;
     let stdout = drain(child.stdout.take().expect("stdout is piped"));
     let stderr = drain(child.stderr.take().expect("stderr is piped"));
-    let status = wait(&mut child, "git ls-files", GIT_LIMIT)?;
+    let status = wait(&mut child, name, limit)?;
     let (stdout, stderr) = (drained(stdout)?, drained(stderr)?);
     if !status.success() {
         return Err(format!(
-            "git ls-files failed: {}",
+            "{name} failed: {}",
             String::from_utf8_lossy(&stderr)
         ));
     }
-    Ok(String::from_utf8_lossy(&stdout)
-        .lines()
-        .map(str::to_string)
-        .collect())
+    Ok(String::from_utf8_lossy(&stdout).into_owned())
+}
+
+/// The tracked files, `/`-separated. In the CI container the checkout belongs to another user, and git refuses to read
+/// such a repository unless it is marked safe; this only reads, so it is marked safe for this one command
+fn tracked(root: &Path) -> Result<Vec<String>, String> {
+    Ok(output(
+        root,
+        "git ls-files",
+        GIT_LIMIT,
+        "git",
+        &["-c", "safe.directory=*", "ls-files"],
+    )?
+    .lines()
+    .map(str::to_string)
+    .collect())
 }
 
 fn map(root: &Path) -> Result<Vec<String>, String> {
@@ -153,16 +183,132 @@ fn toolchain(root: &Path) -> Result<Vec<String>, String> {
     ))
 }
 
-fn main() -> ExitCode {
-    let task = env::args().nth(1);
-    if task.as_deref() != Some("ci") {
-        eprintln!("usage: cargo xtask ci");
-        return ExitCode::from(2);
+/// The version of cargo-about the Dockerfile and the licenses workflow install
+fn pinned_about(root: &Path) -> Result<String, String> {
+    licenses::pinned_version(&read(root, "Dockerfile")?, &read(root, licenses::WORKFLOW)?)
+        .map_err(|problems| problems.join("\n"))
+}
+
+/// The crates the binary links: normal dependencies on every platform, as in about.toml
+fn linked_crates(cargo: &str, root: &Path) -> Result<BTreeSet<String>, String> {
+    let tree = output(
+        root,
+        "cargo tree",
+        TREE_LIMIT,
+        cargo,
+        &[
+            "tree", "--locked", "-p", "docket", "-e", "normal", "--target", "all", "--prefix",
+            "none", "--format", "{p}",
+        ],
+    )?;
+    Ok(licenses::tree_crates(&tree))
+}
+
+/// The check in `cargo xtask ci`: the file lists the crates the binary links, and the two files that install
+/// cargo-about agree. cargo-about itself is not needed
+fn licenses_list(cargo: &str, root: &Path) -> Result<Vec<String>, String> {
+    pinned_about(root)?;
+    Ok(licenses::list_problems(
+        &read(root, licenses::FILE)?,
+        &linked_crates(cargo, root)?,
+    ))
+}
+
+/// What cargo-about writes now, with `\n` line endings and one at the end. The installed cargo-about has to be the
+/// pinned one: another version may write another text, and the file would look stale for no reason. It reads the
+/// license files of the crates of every platform, and `--frozen` keeps it off the network, so every crate is fetched
+/// first
+fn generate_licenses(cargo: &str, root: &Path) -> Result<String, String> {
+    let pinned = pinned_about(root)?;
+    let install = format!("cargo install --locked --features cli cargo-about@{pinned}");
+    let installed = output(
+        root,
+        "cargo about --version",
+        ABOUT_LIMIT,
+        cargo,
+        &["about", "--version"],
+    )
+    .map_err(|e| format!("{e}\ncargo-about is needed: {install}"))?;
+    if installed.trim() != format!("cargo-about {pinned}") {
+        return Err(format!(
+            "{} is installed, but the Dockerfile pins cargo-about {pinned}: {install}",
+            installed.trim()
+        ));
     }
+    output(
+        root,
+        "cargo fetch",
+        FETCH_LIMIT,
+        cargo,
+        &["fetch", "--locked"],
+    )?;
+    let text = output(
+        root,
+        "cargo about generate",
+        ABOUT_LIMIT,
+        cargo,
+        &["about", "generate", "--frozen", "--fail", "about.hbs"],
+    )?;
+    // cargo-about ends the template's last line with one more line break, which git reports as a blank line at the end
+    Ok(format!(
+        "{}\n",
+        text.replace("\r\n", "\n").trim_end_matches('\n')
+    ))
+}
+
+/// The check in `cargo xtask licenses --check`: the list, and the text cargo-about writes
+fn licenses_text(cargo: &str, root: &Path) -> Result<Vec<String>, String> {
+    let committed = read(root, licenses::FILE)?;
+    let mut found = licenses::list_problems(&committed, &linked_crates(cargo, root)?);
+    found.extend(licenses::text_problems(
+        &committed,
+        &generate_licenses(cargo, root)?,
+    ));
+    Ok(found)
+}
+
+/// `cargo xtask licenses`: write THIRD-PARTY-LICENSES.txt. `--check`: fail where it differs from what would be written
+fn licenses(cargo: &str, root: &Path, check: bool) -> ExitCode {
+    if check {
+        return if report("Third-party licenses", licenses_text(cargo, root)) {
+            ExitCode::SUCCESS
+        } else {
+            ExitCode::FAILURE
+        };
+    }
+    let written = generate_licenses(cargo, root).and_then(|text| {
+        fs::write(root.join(licenses::FILE), &text)
+            .map(|()| licenses::listed_crates(&text).len())
+            .map_err(|e| format!("cannot write {}: {e}", licenses::FILE))
+    });
+    match written {
+        Ok(crates) => {
+            println!("wrote {} ({crates} crates)", licenses::FILE);
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("{e}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn main() -> ExitCode {
+    let args: Vec<String> = env::args().skip(1).collect();
+    let args: Vec<&str> = args.iter().map(String::as_str).collect();
     let cargo = env::var("CARGO").unwrap_or_else(|_| "cargo".into());
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .expect("xtask sits inside the repository");
+    match args.as_slice() {
+        ["ci"] => {}
+        ["licenses"] => return licenses(&cargo, root, false),
+        ["licenses", "--check"] => return licenses(&cargo, root, true),
+        _ => {
+            eprintln!("usage: cargo xtask ci | cargo xtask licenses [--check]");
+            return ExitCode::from(2);
+        }
+    }
     let mut results: Vec<(&str, bool)> = CHECKS
         .iter()
         .map(|(name, limit, args)| (*name, run(&cargo, name, *limit, args)))
@@ -171,6 +317,10 @@ fn main() -> ExitCode {
     results.push((
         "Toolchain version",
         report("Toolchain version", toolchain(root)),
+    ));
+    results.push((
+        "Third-party licenses",
+        report("Third-party licenses", licenses_list(&cargo, root)),
     ));
     println!("\n{}", "=".repeat(40));
     for (name, ok) in &results {

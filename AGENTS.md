@@ -11,14 +11,16 @@ and why, is in `README.md`.
 | `layers/` | The layer definitions, built into the binary: `table.toml` (what the layers are, in every stack) and one layout per stack (`python.toml`, `typescript.toml`, `rust.toml`: where each layer lives and the files that make it) |
 | `records/` | The records skeleton, built into the binary: `rules.md` and `spec-rules.md` (the backlog rules and the spec rules docket writes into every project), and `log.md` (the log `docket create` starts) |
 | `tests/` | Tests that run the built binary as a user runs it (`cli.rs`) |
-| `xtask/` | The CI entry point (`cargo xtask ci`) |
+| `xtask/` | The CI entry point (`cargo xtask ci`), and `cargo xtask licenses`, which writes `THIRD-PARTY-LICENSES.txt` (`--check`: checks it) |
 | `.cargo/` | The `cargo xtask` alias |
-| `.github/` | GitHub Actions: `ci.yml` runs `cargo xtask ci` in the container, and builds and installs the wheels on Linux and Windows |
+| `.github/` | GitHub Actions: `ci.yml` runs `cargo xtask ci` in the container, and builds and installs the wheels on Linux and Windows; `licenses.yml` checks `THIRD-PARTY-LICENSES.txt` with cargo-about |
 | `Cargo.toml` | The package, and the one place that names docket's version (maturin takes the wheel version from it) |
 | `rust-toolchain.toml` | The one place that names the toolchain. The Dockerfile and CI install from it |
-| `Dockerfile`, `compose.yaml` | The development container: the Linux of CI, with the packaging tools |
-| `pyproject.toml` | The pip package: a wheel that carries only the binary (maturin, `bindings = "bin"`) |
+| `Dockerfile`, `compose.yaml` | The development container: the Linux of CI, with the packaging tools and cargo-about |
+| `pyproject.toml` | The pip package: a wheel that carries only the binary and the licenses (maturin, `bindings = "bin"`) |
 | `requirements-build.txt` | The one place that names the packaging tools (maturin, cargo-xwin). The Dockerfile and CI install from it |
+| `THIRD-PARTY-LICENSES.txt` | The licenses of every crate the binary links, which go with the binary: in the wheel next to docket's own. Generated, never edited by hand |
+| `about.toml`, `about.hbs` | What cargo-about writes `THIRD-PARTY-LICENSES.txt` from: the licenses docket may ship, and the file's template |
 | `README.md` | What docket checks, how to use it, and how to build it |
 | `LICENSE-MIT`, `LICENSE-APACHE` | The license: MIT OR Apache-2.0 |
 
@@ -58,6 +60,15 @@ Also tracked, as in most repositories: `.gitattributes`, `.gitignore`, `Cargo.lo
   Windows SDK; without the SDK, linking fails (`kernel32.lib` not found), and Git Bash's own `link` gets in the way.
 - **Change the toolchain version only in `rust-toolchain.toml`,** and the base image (`Dockerfile`, the `container`
   in `.github/workflows/ci.yml`) to the same version. Change the packaging tools only in `requirements-build.txt`.
+- **After a change to the dependencies, run `cargo xtask licenses` and commit `THIRD-PARTY-LICENSES.txt` with it.**
+  It needs cargo-about, at the version the `Dockerfile` installs (the container has it; on the host, the command
+  prints how to install it). `cargo xtask ci` fails while the file misses a crate `cargo tree` says the binary links,
+  or lists one it does not; it does not run cargo-about, which takes minutes to build. `licenses.yml` checks the text
+  with `cargo xtask licenses --check`, only on a push that changes what the text is made from. A license outside
+  `accepted` in `about.toml` fails the generation: adding one is a decision of its own, not part of a bump.
+- **cargo-about is pinned in the `Dockerfile` and `.github/workflows/licenses.yml`, to the same version,** and
+  `cargo xtask ci` fails when they differ; `cargo xtask licenses` fails when the installed one is another: another
+  version may write another text. After changing it, run `cargo xtask licenses`.
 - **`ruff_python_parser` and `ruff_python_ast` are pinned to one exact version, and move together.** They are
   internal crates of Ruff, whose API changes between any two versions. Bump them by hand when the toolchain changes
   (a new Ruff may need a newer Rust) and when Python gains syntax docket fails to read.

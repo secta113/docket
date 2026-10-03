@@ -11,3 +11,8 @@ RUN apt-get update \
 COPY requirements-build.txt /tmp/
 RUN python3 -m venv /opt/build && /opt/build/bin/pip install --no-cache-dir -r /tmp/requirements-build.txt
 ENV PATH=/opt/build/bin:$PATH
+# cargo-about writes THIRD-PARTY-LICENSES.txt (`cargo xtask licenses`). The licenses workflow installs the same
+# version: `cargo xtask ci` fails when the two name different versions, and `cargo xtask licenses` when another one is
+# installed. Its downloaded sources are not kept in the image
+RUN cargo install --locked --features cli cargo-about@0.9.2 \
+    && rm -rf /usr/local/cargo/registry
