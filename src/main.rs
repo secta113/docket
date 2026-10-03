@@ -20,8 +20,8 @@ Start a project:
   3. rotproof create                 make the layers, docs/ and the project's files
   4. rotproof check                  check them; this is the project's CI
 
-The rules Rotproof keeps are in .rotproof/AGENTS.md once `rotproof create` has run. `rotproof <command> --help` says
-what a command reads, writes and never does.
+The rules Rotproof keeps are in .rotproof/AGENTS.md once `rotproof create` has run; `rotproof guide --stack <stack>`
+prints them before. `rotproof <command> --help` says what a command reads, writes and never does.
 
 Exit codes: 0 when the rules are kept and the command did its work; 1 when `rotproof check` finds a rule broken; 2
 when a file cannot be read or written, or the command line is wrong.";
@@ -69,6 +69,17 @@ enum Command {
     /// rules.md of each directory). Prints every broken rule under the check that found it, and what was not checked
     /// and why. Writes nothing. Exits 1 when a rule is broken, 2 when a file cannot be read.
     Check,
+    /// Print the rules Rotproof keeps for a stack, the text of .rotproof/AGENTS.md, writing nothing
+    ///
+    /// Prints the guide of the stack the project declares, or of the stack named with --stack, which needs no project:
+    /// how to run Rotproof, the layers of the stack with where each lives and what it may import, and the rules of the
+    /// records. The same text `rotproof create` writes to .rotproof/AGENTS.md. Exits 2 for an unknown stack, or when
+    /// no stack is named and the declaration cannot be read.
+    Guide {
+        /// python, typescript, rust, or none (records only). Without it, the stack in .config/rotproof.toml
+        #[arg(long)]
+        stack: Option<String>,
+    },
     /// Write every index.md in docs/ from the frontmatter
     ///
     /// Rewrites docs/index.md and the index.md of docs/backlog/, docs/specs/ and docs/knowledge/, and the rules.md
@@ -100,6 +111,12 @@ fn main() -> ExitCode {
         Command::Init { stack } => init(&cli.root, &stack).map(|()| true),
         Command::Create => create(&cli.root).map(|()| true),
         Command::Check => check(&cli.root),
+        Command::Guide { stack } => {
+            rotproof::project::guide_for(&cli.root, stack.as_deref()).map(|text| {
+                print!("{text}");
+                true
+            })
+        }
         Command::Index => index(&cli.root).map(|()| true),
         Command::StopHook => unreachable!("answered above"),
     };

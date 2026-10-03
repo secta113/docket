@@ -66,6 +66,7 @@ rotproof --root <repository> init --stack python  # write .config/rotproof.toml,
 rotproof --root <repository> create  # make the layers .config/rotproof.toml declares, the records skeleton and the guide
 rotproof --root <repository> check   # check the layers and the records; exits 1 when a rule is broken
 rotproof --root <repository> index   # write every generated file in docs/ (the index files and the rules)
+rotproof guide --stack python        # print the rules Rotproof keeps for a stack, with or without a project
 rotproof stop-hook                   # run by Claude Code or Gemini CLI when the agent stops (see "The stop hook")
 ```
 

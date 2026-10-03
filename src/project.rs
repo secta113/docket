@@ -113,6 +113,37 @@ fn map(declared: &Declared) -> String {
         .collect()
 }
 
+/// The guide `rotproof guide` prints: for `stack` when it is named, otherwise for the stack the project at `root`
+/// declares. `Err` when the stack is unknown, or none is named and the declaration cannot be read.
+pub fn guide_for(root: &std::path::Path, stack: Option<&str>) -> Result<String, String> {
+    let stacks = crate::layers::known_stacks().join(", ");
+    let stack = match stack {
+        Some(stack) => stack.to_string(),
+        None => match crate::layers::declaration(root).map_err(|e| e.to_string())? {
+            Some(Ok(declaration)) => declaration.stack,
+            None => {
+                return Err(format!(
+                    "no {} here: name a stack with --stack ({stacks})",
+                    crate::layers::DECLARATION
+                ));
+            }
+            Some(Err(why)) => {
+                return Err(format!(
+                    "{}: {why}; or name a stack with --stack ({stacks})",
+                    crate::layers::DECLARATION
+                ));
+            }
+        },
+    };
+    if stack == crate::layers::RECORDS_ONLY {
+        return Ok(guide(&stack, None));
+    }
+    match crate::layers::layout(&stack) {
+        Some(layout) => Ok(guide(&stack, Some(&layout))),
+        None => Err(format!("unknown stack {stack:?} (known: {stacks})")),
+    }
+}
+
 /// The guide for a project of `stack`, whose layout is `layout` (`None` for a repository of records only).
 pub fn guide(stack: &str, layout: Option<&Layout>) -> String {
     let (kept, checked, layers) = match layout {

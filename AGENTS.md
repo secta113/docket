@@ -30,7 +30,7 @@ Also tracked, as in most repositories: `.gitattributes`, `.gitignore`, `Cargo.lo
 
 | Module of `src/` | Content |
 |---|---|
-| `main.rs` | The command line: `rotproof init`, `rotproof create`, `rotproof check`, `rotproof index` and `rotproof stop-hook` |
+| `main.rs` | The command line: `rotproof init`, `rotproof create`, `rotproof check`, `rotproof guide`, `rotproof index` and `rotproof stop-hook`, and the help that leads from one to the next |
 | `lib.rs` | The library the command line calls |
 | `check.rs` | Every rule `rotproof check` runs, each with its floor |
 | `layers.rs` | Reading the layer definitions in `layers/` and a project's `.config/rotproof.toml` |

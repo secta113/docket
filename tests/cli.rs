@@ -1523,11 +1523,41 @@ fn an_agent_with_only_the_binary_finds_its_way_to_a_checked_project() {
     assert!(out.status.success(), "{}", stdout(&out));
 
     // Every command's --help says more than its -h, and how it exits
-    for command in ["init", "create", "check", "index", "stop-hook"] {
+    for command in ["init", "create", "check", "guide", "index", "stop-hook"] {
         let short = stdout(&run(&[command, "-h"]));
         let long = stdout(&run(&[command, "--help"]));
         assert!(long.len() > short.len(), "{command}:\n{long}");
         assert!(long.contains("Exits"), "{command}:\n{long}");
+    }
+}
+
+#[test]
+fn guide_prints_what_create_writes_with_or_without_a_project() {
+    let empty = tempfile::tempdir().unwrap();
+    let empty_arg = root_arg(empty.path());
+    for stack in ["python", "typescript", "rust", "none"] {
+        let root = declared(&format!("stack = \"{stack}\"\nareas = [\"a\"]\n"));
+        let arg = root_arg(root.path());
+        assert!(run(&["--root", &arg, "create"]).status.success());
+        let written = fs::read_to_string(root.path().join(".rotproof/AGENTS.md")).unwrap();
+        // In the project, from its declaration; outside any project, from --stack
+        let inside = run(&["--root", &arg, "guide"]);
+        assert!(inside.status.success(), "{stack}");
+        assert_eq!(stdout(&inside), written, "{stack}");
+        let before = run(&["--root", &empty_arg, "guide", "--stack", stack]);
+        assert!(before.status.success(), "{stack}");
+        assert_eq!(stdout(&before), written, "{stack}");
+    }
+    // Nothing is written
+    assert!(tree(empty.path()).is_empty(), "{:?}", tree(empty.path()));
+    // Without a stack to go by, and with an unknown one: exit 2, with the stacks
+    for args in [vec!["guide"], vec!["guide", "--stack", "cobol"]] {
+        let mut all = vec!["--root", empty_arg.as_str()];
+        all.extend(args);
+        let out = run(&all);
+        assert_eq!(out.status.code(), Some(2));
+        let said = String::from_utf8_lossy(&out.stderr);
+        assert!(said.contains("python, typescript, rust, none"), "{said}");
     }
 }
 
