@@ -8,6 +8,7 @@ pub mod frontmatter;
 pub mod init;
 pub mod layers;
 pub mod markdown;
+pub mod markers;
 pub mod schema;
 pub mod source;
 pub mod structure;

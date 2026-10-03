@@ -4,6 +4,8 @@
 //!   sits outside them (`structure.rs`).
 //! - **The layers import only what the table allows** (`direction.rs`), for `python`; the other stacks say that the
 //!   direction was not checked.
+//! - **No comment holds `TODO`, `FIXME`, `XXX`, `HACK` or `NOTE`** (`markers.rs`), for `python`: work left to do
+//!   belongs in the backlog, where it is listed and closed.
 //! - **The backlog works as a backlog**: every document keeps the format, every link in `# Details` resolves, and every
 //!   backlog item the log points to exists.
 //! - **Every record has one declared area**: the areas in `.config/rotproof.toml` are distinct headings, and the one
@@ -18,6 +20,7 @@
 //!
 //! Each check has a floor: when the scan finds nothing at all, it fails instead of passing with nothing checked.
 
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::fs;
 use std::io;
@@ -60,7 +63,8 @@ static LIST_ITEM: LazyLock<Regex> =
 /// One broken rule: which check found it, and what is wrong.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Finding {
-    pub check: &'static str,
+    /// The heading the finding is printed under. Fixed for most checks; built for those that name what they found
+    pub check: Cow<'static, str>,
     pub detail: String,
 }
 
@@ -81,7 +85,7 @@ pub fn check(root: &Path) -> io::Result<Report> {
         .found
         .into_iter()
         .map(|detail| Finding {
-            check: "the tree matches .config/rotproof.toml",
+            check: "the tree matches .config/rotproof.toml".into(),
             detail,
         })
         .collect();
@@ -91,10 +95,17 @@ pub fn check(root: &Path) -> io::Result<Report> {
         layers_checked = declared.layout.is_some();
         let direction = crate::direction::problems(root, declared)?;
         findings.extend(direction.found.into_iter().map(|detail| Finding {
-            check: "the layers import only what layers/table.toml allows",
+            check: "the layers import only what layers/table.toml allows".into(),
             detail,
         }));
         skipped.extend(direction.skipped);
+        let markers = crate::markers::problems(root, declared)?;
+        let heading = markers.heading();
+        findings.extend(markers.found.into_iter().map(|detail| Finding {
+            check: heading.clone().into(),
+            detail,
+        }));
+        skipped.extend(markers.skipped);
     }
     findings.extend(records(root)?);
     Ok(Report {
@@ -108,7 +119,10 @@ pub fn check(root: &Path) -> io::Result<Report> {
 fn records(root: &Path) -> io::Result<Vec<Finding>> {
     let mut found = Vec::new();
     let mut add = |check: &'static str, details: Vec<String>| {
-        found.extend(details.into_iter().map(|detail| Finding { check, detail }));
+        found.extend(details.into_iter().map(|detail| Finding {
+            check: check.into(),
+            detail,
+        }));
     };
     // Every record names an area, so nothing below can be judged without them. The structure check names what is
     // wrong with the declaration; this says that the records were not checked because of it

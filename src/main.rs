@@ -107,9 +107,9 @@ fn check(root: &Path) -> Result<bool, String> {
     for finding in &found {
         if finding.check != last {
             println!("{}:", finding.check);
-            last = finding.check;
+            last = &finding.check;
         }
-        // A detail of several lines (an example to write) stays under its finding
+        // A detail of several lines (an example to write, the line a marker sits on) stays under its finding
         println!("  {}", finding.detail.replace('\n', "\n    "));
     }
     if found.is_empty() {

@@ -200,6 +200,11 @@ stale_after: 2027-01-01T00:00:00+09:00   # optional: when to measure the state a
   layer. Imports of modules in no layer (the standard library, packages) are not judged, and imports built at run
   time (`importlib`) are not seen. A file that is not UTF-8 or has a syntax error fails, since its imports cannot all
   be read.
+- **No comment holds `TODO`, `FIXME`, `XXX`, `HACK` or `NOTE`** (Python): in upper case, as whole words, in any code
+  file outside `unchecked`, `tests/` included. Work left to do belongs in the backlog, where it is listed and closed,
+  and a decision with its reason in the spec or the log entry of the change; a comment that explains how to read the
+  code stays, without the word. Only comments count: `Status.TODO` and `"XXX-XXXX"` are not markers, and docstrings
+  are strings. For `rust` and `typescript`, the check says that it did not run.
 
 - **The bundle is there:** `docs/`, `docs/index.md`, `docs/backlog/`, `docs/backlog/rules.md`, `docs/specs/`,
   `docs/specs/rules.md` and `docs/done/` exist, and the declaration with its `areas` can be read. Without them every other check would pass

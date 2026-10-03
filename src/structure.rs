@@ -19,7 +19,7 @@ use crate::layers::{DECLARATION, Declared, Layout, MISSING, Place, declaration};
 use crate::source::{exactly, relative_path};
 
 /// Whether `path` is `prefix` or inside it. Both are from the root, with `/`.
-fn within(path: &str, prefix: &str) -> bool {
+pub(crate) fn within(path: &str, prefix: &str) -> bool {
     path == prefix || path.starts_with(&format!("{prefix}/"))
 }
 

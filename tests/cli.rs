@@ -1035,6 +1035,13 @@ fn the_stacks_without_a_direction_check_say_so() {
             "{stack}: {said}"
         );
         assert!(
+            said.contains(&format!(
+                "comments are not checked for TODO, FIXME, XXX, HACK, NOTE: Rotproof does not read the comments of a \
+                 {stack} project yet"
+            )),
+            "{stack}: {said}"
+        );
+        assert!(
             said.contains("what was checked of the layers, and every record, keep the rules"),
             "{stack}: {said}"
         );
@@ -1195,4 +1202,50 @@ fn a_repository_of_records_only_makes_and_checks_only_docs() {
         "{}",
         stdout(&out)
     );
+}
+
+#[test]
+fn a_marker_in_a_comment_fails_wherever_the_code_is() {
+    let root = clean_repo();
+    let r = root.path();
+    let write = |path: &str, text: &str| {
+        let full = r.join(path);
+        fs::create_dir_all(full.parent().unwrap()).unwrap();
+        fs::write(full, text).unwrap();
+    };
+    write("domain/model.py", "X = 1\n# TODO: split this\n");
+    write("tests/test_model.py", "x = 1  # NOTE about x\n");
+    // Not a comment, or in a path the project lists in unchecked
+    write("domain/states.py", "TODO = 1\nPHONE = \"XXX-XXXX\"\n");
+    write("scripts/generated.py", "# FIXME written by a tool\n");
+    declare(
+        r,
+        "stack = \"python\"\nareas = [\"a\"]\nabsent = [\"ui\"]\nunchecked = [\"scripts\"]\n",
+    );
+    let arg = root_arg(r);
+    let out = run(&["--root", &arg, "check"]);
+    let said = stdout(&out);
+    assert_eq!(out.status.code(), Some(1), "{said}");
+    // The heading names only what was found; each finding is its place, and the line under it as written
+    assert!(
+        said.contains("no comment holds TODO or NOTE (work left to do goes in docs/backlog/"),
+        "{said}"
+    );
+    assert!(
+        said.contains("  domain/model.py:2\n    # TODO: split this\n"),
+        "{said}"
+    );
+    assert!(
+        said.contains("  tests/test_model.py:1\n    x = 1  # NOTE about x\n"),
+        "{said}"
+    );
+    assert!(
+        !said.contains("states.py") && !said.contains("generated.py"),
+        "{said}"
+    );
+    // The same text without the markers passes
+    write("domain/model.py", "X = 1\n# Split this when it grows\n");
+    write("tests/test_model.py", "x = 1  # about x\n");
+    let out = run(&["--root", &arg, "check"]);
+    assert!(out.status.success(), "{}", stdout(&out));
 }
