@@ -11,10 +11,27 @@ use clap::{Parser, Subcommand};
 use rotproof::bundle::{Bundle, backlog, stale};
 use rotproof::source::relative_path;
 
+/// What every help says after the commands: how to start, where the rules are, and the exit codes. An agent with only
+/// the binary reads its way from here to a checked project.
+const START: &str = "\
+Start a project:
+  1. rotproof init --stack <stack>   write .config/rotproof.toml (python, typescript, rust, or none for records only)
+  2. edit it: list in absent the layers the project does not have
+  3. rotproof create                 make the layers, docs/ and the project's files
+  4. rotproof check                  check them; this is the project's CI
+
+The rules Rotproof keeps are in .rotproof/AGENTS.md once `rotproof create` has run. `rotproof <command> --help` says
+what a command reads, writes and never does.
+
+Exit codes: 0 when the rules are kept and the command did its work; 1 when `rotproof check` finds a rule broken; 2
+when a file cannot be read or written, or the command line is wrong.";
+
+/// Keeps a project's structure from drifting while LLMs and people change it: the layers (which part of the code may
+/// import which) and the records an agent works from (backlog, specs, knowledge and log in docs/).
 #[derive(Parser)]
-#[command(version, about)]
+#[command(version, about, after_help = START)]
 struct Cli {
-    /// The repository root. The bundle is `<root>/docs`
+    /// The repository root; the records are in `<root>/docs`
     #[arg(long, default_value = ".")]
     root: PathBuf,
 
@@ -25,19 +42,47 @@ struct Cli {
 #[derive(Subcommand)]
 enum Command {
     /// Write .config/rotproof.toml for a stack, once. Edit it, then run `rotproof create`
+    ///
+    /// Writes only the declaration, with every field and what it means, so the layers the project does not want are
+    /// listed in absent before anything is made. Never overwrites a declaration that exists. Exits 2 for an unknown
+    /// stack or a declaration that exists.
     Init {
         /// python, typescript, rust, or none (records only)
         #[arg(long)]
         stack: String,
     },
     /// Make the layers that .config/rotproof.toml declares and the tree lacks, and the records skeleton in docs/
+    ///
+    /// Makes only what is missing: each layer neither present nor declared absent, the directories of docs/ and
+    /// docs/log.md, and the project's files (AGENTS.md, CLAUDE.md, README.md, .gitignore, .gitattributes, the agents'
+    /// hook settings, and for python and none the pin of Rotproof and a CI workflow), each when it does not exist.
+    /// Rewrites the files Rotproof generates: .rotproof/AGENTS.md (the rules it keeps) and the index files and rules in
+    /// docs/. Adds the fields the declaration lacks, keeping its comments and values. Never overwrites another file,
+    /// and never moves or deletes one. Run it when a project starts, after editing the declaration, and after
+    /// upgrading Rotproof. Exits 2 when the declaration cannot be read or a file cannot be written.
     Create,
     /// Check the layers and the records, and exit non-zero when one breaks the rules
+    ///
+    /// Checks that the tree matches .config/rotproof.toml (every layer present or declared absent, no code outside
+    /// the layers), that each layer imports only what the layer table allows, that no comment holds TODO, FIXME, XXX,
+    /// HACK or NOTE, that .rotproof/AGENTS.md is up to date, and that every record in docs/ keeps its rules (the
+    /// rules.md of each directory). Prints every broken rule under the check that found it, and what was not checked
+    /// and why. Writes nothing. Exits 1 when a rule is broken, 2 when a file cannot be read.
     Check,
-    /// Write every index.md in the bundle from the frontmatter
+    /// Write every index.md in docs/ from the frontmatter
+    ///
+    /// Rewrites docs/index.md and the index.md of docs/backlog/, docs/specs/ and docs/knowledge/, and the rules.md
+    /// Rotproof keeps there, from the frontmatter of the documents. Run it after a record changes; never edit an
+    /// index.md by hand. Lists the documents it left out and why, and the backlog items past their stale_after. Exits
+    /// 2 when the declaration or a document cannot be read.
     Index,
     /// Run as Claude Code's Stop or Gemini CLI's AfterAgent hook: send the agent back once when its last message
     /// leaves something open and nothing in docs/ changed. Reads the hook input on stdin
+    ///
+    /// Not run by hand: `rotproof create` writes .claude/settings.json and .gemini/settings.json that run it. When the
+    /// agent's last message holds a phrase that leaves something open (such as "not checked") and git shows no change
+    /// in docs/, it asks the agent once to record the finding or say where it is. Exits 1, never 2, when it fails, so
+    /// a broken hook never keeps the agent from stopping.
     StopHook,
 }
 
@@ -103,6 +148,9 @@ fn create(root: &Path) -> Result<(), String> {
     }
     for (name, why) in made.left_out {
         println!("left out of the index, fix it: {name}: {why}");
+    }
+    if !made.written.is_empty() {
+        println!("next: run `rotproof check`; the rules it keeps are in .rotproof/AGENTS.md");
     }
     Ok(())
 }

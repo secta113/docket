@@ -13,9 +13,9 @@ use serde::Deserialize;
 
 /// Where a project declares its structure, from the root
 pub const DECLARATION: &str = ".config/rotproof.toml";
-/// What to do when the declaration is missing
-pub const MISSING: &str =
-    "missing: .config/rotproof.toml. Write it with `rotproof init --stack <stack>`";
+/// What to do when the declaration is missing, with every stack: a test keeps the list equal to [`known_stacks`]
+pub const MISSING: &str = "missing: .config/rotproof.toml. Write it with `rotproof init --stack <stack>` (python, \
+                           typescript, rust, or none for records only)";
 /// The stack of a repository that keeps records only: no layers, and no structure to check
 pub const RECORDS_ONLY: &str = "none";
 
@@ -451,6 +451,16 @@ impl Declared {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_line_for_a_missing_declaration_lists_every_stack() {
+        let listed = MISSING.split_once('(').unwrap().1;
+        for stack in known_stacks() {
+            assert!(listed.contains(stack), "{stack} is not in: {MISSING}");
+        }
+        // Nothing more: a stack removed from `layers/` leaves the line too
+        assert_eq!(listed.matches(',').count() + 1, known_stacks().len());
+    }
 
     #[test]
     fn every_definition_reads() {

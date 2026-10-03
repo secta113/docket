@@ -72,6 +72,10 @@ rotproof stop-hook                   # run by Claude Code or Gemini CLI when the
 `--root` defaults to the current directory. The declaration is read from `<repository>/.config/rotproof.toml`, and the
 records from `<repository>/docs`.
 
+The binary leads the way without this README, for an agent that has only Rotproof: `rotproof --help` says what it is,
+the order to start in and the exit codes, `rotproof <command> --help` what a command reads, writes and never does, and
+each command's output names the next step. A test follows that path from an empty directory to a passing check.
+
 Start a project with `rotproof init --stack <stack>` (`python`, `typescript`, `rust`, or `none` for a repository
 that keeps records only). It writes only the declaration, so you declare in `absent` the layers you do not want before
 anything is made, and it never overwrites a declaration that exists. Then run `rotproof create`.

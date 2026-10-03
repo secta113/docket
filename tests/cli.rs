@@ -1460,6 +1460,78 @@ fn only_the_projects_own_gitignore_hides_code() {
 }
 
 #[test]
+fn an_agent_with_only_the_binary_finds_its_way_to_a_checked_project() {
+    // Each step follows only what the step before printed, as an agent without the README would
+    let root = tempfile::tempdir().unwrap();
+    let arg = root_arg(root.path());
+    let stderr = |out: &Output| String::from_utf8_lossy(&out.stderr).into_owned();
+
+    // No arguments: what Rotproof is, and the order to start in
+    let help = stderr(&run(&[]));
+    assert!(help.contains("Keeps a project's structure"), "{help}");
+    let steps = [
+        "rotproof init --stack <stack>",
+        "list in absent",
+        "rotproof create",
+        "rotproof check",
+    ];
+    let start = &help[help
+        .find("Start a project:")
+        .expect("the help says how to start")..];
+    let at: Vec<usize> = steps
+        .iter()
+        .map(|s| start.find(s).unwrap_or(usize::MAX))
+        .collect();
+    assert!(at.windows(2).all(|w| w[0] < w[1]), "{help}");
+    assert!(
+        help.contains(".rotproof/AGENTS.md") && help.contains("Exit codes"),
+        "{help}"
+    );
+
+    // The stacks, from init's help and from a check with nothing declared
+    let init_help = stdout(&run(&["init", "--help"]));
+    assert!(
+        init_help.contains("python, typescript, rust, or none"),
+        "{init_help}"
+    );
+    let out = run(&["--root", &arg, "check"]);
+    assert!(
+        stdout(&out).contains("rotproof init --stack <stack>` (python, typescript, rust, or none"),
+        "{}",
+        stdout(&out)
+    );
+
+    // Each command names the next
+    let out = run(&["--root", &arg, "init", "--stack", "python"]);
+    assert!(
+        stdout(&out).contains("then run `rotproof create`"),
+        "{}",
+        stdout(&out)
+    );
+    let out = run(&["--root", &arg, "create"]);
+    assert!(
+        stdout(&out).contains("next: run `rotproof check`"),
+        "{}",
+        stdout(&out)
+    );
+    fs::write(
+        root.path().join("docs/log.md"),
+        "# Log\n\n## 2026-10-04\n\n* Started\n",
+    )
+    .unwrap();
+    let out = run(&["--root", &arg, "check"]);
+    assert!(out.status.success(), "{}", stdout(&out));
+
+    // Every command's --help says more than its -h, and how it exits
+    for command in ["init", "create", "check", "index", "stop-hook"] {
+        let short = stdout(&run(&[command, "-h"]));
+        let long = stdout(&run(&[command, "--help"]));
+        assert!(long.len() > short.len(), "{command}:\n{long}");
+        assert!(long.contains("Exits"), "{command}:\n{long}");
+    }
+}
+
+#[test]
 fn init_writes_a_declaration_that_create_reads() {
     for stack in ["python", "typescript", "rust", "none"] {
         let root = tempfile::tempdir().unwrap();
