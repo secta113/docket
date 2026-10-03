@@ -137,10 +137,25 @@ pub fn problems(root: &Path) -> io::Result<Structure> {
             skipped.push(path);
         }
     }
+    // A file a starter puts outside the layers is its layer's while that layer is there; without the layer, it is code
+    // outside the layers like any other
+    for (path, layer) in &layout.belongs {
+        if declared
+            .places
+            .iter()
+            .any(|p| &p.name == layer && !declared.is_absent(p) && present(&p.path))
+        {
+            skipped.push(path);
+        }
+    }
     let places: Vec<&str> = declared.places.iter().map(|p| p.path.as_str()).collect();
+    let goes = layout
+        .where_code_goes
+        .as_ref()
+        .map_or(",".to_string(), |goes| format!(": {goes};"));
     for outside in outside(root, layout, &places, &skipped)? {
         found.push(format!(
-            "code outside the layers: {outside} (move it into a layer, or list it in unchecked in {DECLARATION})"
+            "code outside the layers: {outside} (move it into a layer{goes} or list it in unchecked in {DECLARATION})"
         ));
     }
     for layer in declared.places.iter().filter(|p| p.parent.is_none()) {

@@ -1180,6 +1180,109 @@ fn every_form_of_typescript_import_is_judged() {
     assert_eq!(said.matches(": imports ").count(), 6, "{said}");
 }
 
+/// The `src/` of Vite's React starter (`npm create vite -- --template react-ts`, Vite 8.3, measured 2026-10-04), cut
+/// down to the lines that import. A copy, so no test needs the network or Node; when Vite changes its starter, a file
+/// it adds in `src/` fails `rotproof check` by name in a real project, so the copy cannot hide a change.
+const VITE_STARTER: [(&str, &str); 6] = [
+    (
+        "src/main.tsx",
+        "import { StrictMode } from 'react'\nimport { createRoot } from 'react-dom/client'\nimport './index.css'\n\
+         import App from './App.tsx'\n\ncreateRoot(document.getElementById('root')!).render(\n  <StrictMode>\n    \
+         <App />\n  </StrictMode>,\n)\n",
+    ),
+    (
+        "src/App.tsx",
+        "import { useState } from 'react'\nimport reactLogo from './assets/react.svg'\nimport './App.css'\n\n\
+         function App() {\n  const [count, setCount] = useState(0)\n  return <img src={reactLogo} />\n}\n\n\
+         export default App\n",
+    ),
+    ("src/App.css", "#center {\n  display: flex;\n}\n"),
+    ("src/index.css", ":root {\n  --text: #6b6375;\n}\n"),
+    (
+        "src/assets/react.svg",
+        "<svg xmlns=\"http://www.w3.org/2000/svg\"/>\n",
+    ),
+    (
+        "src/assets/vite.svg",
+        "<svg xmlns=\"http://www.w3.org/2000/svg\"/>\n",
+    ),
+];
+
+#[test]
+fn vites_starter_keeps_its_entry_point_and_says_where_the_rest_goes() {
+    let root = repo_with_ui("typescript", "");
+    let r = root.path();
+    let write = |path: &str, text: &str| {
+        let full = r.join(path);
+        fs::create_dir_all(full.parent().unwrap()).unwrap();
+        fs::write(full, text).unwrap();
+    };
+    for (path, text) in VITE_STARTER {
+        write(path, text);
+    }
+    let arg = root_arg(r);
+    let out = run(&["--root", &arg, "check"]);
+    let said = stdout(&out);
+    assert_eq!(out.status.code(), Some(1), "{said}");
+    // main.tsx is handler's; the rest is named, with where it goes
+    for outside in ["src/App.css", "src/App.tsx", "src/assets", "src/index.css"] {
+        assert!(
+            said.contains(&format!(
+                "code outside the layers: {outside} (move it into a layer: a screen (Vite's App.tsx) goes in \
+                 src/ui/pages; a style (index.css, App.css) or an image the UI shows (assets/) in src/ui/atoms; or \
+                 list it in unchecked"
+            )),
+            "{outside}:\n{said}"
+        );
+    }
+    assert!(!said.contains("src/main.tsx"), "{said}");
+
+    // Moved as the finding says, with main.tsx's imports following: everything passes, and main.tsx is read as
+    // handler's, which may import ui
+    fs::remove_file(r.join("src/App.tsx")).unwrap();
+    fs::remove_file(r.join("src/App.css")).unwrap();
+    fs::remove_file(r.join("src/index.css")).unwrap();
+    fs::remove_dir_all(r.join("src/assets")).unwrap();
+    write(
+        "src/ui/pages/App.tsx",
+        "import reactLogo from '../atoms/assets/react.svg'\nimport '../atoms/App.css'\nexport default function App() \
+         {\n  return <img src={reactLogo} />\n}\n",
+    );
+    write("src/ui/atoms/App.css", "#center {}\n");
+    write("src/ui/atoms/index.css", ":root {}\n");
+    write("src/ui/atoms/assets/react.svg", "<svg/>\n");
+    write(
+        "src/main.tsx",
+        "import './ui/atoms/index.css'\nimport App from './ui/pages/App.tsx'\nexport { App }\n",
+    );
+    let out = run(&["--root", &arg, "check"]);
+    assert!(out.status.success(), "{}", stdout(&out));
+    write(
+        "src/main.tsx",
+        "import App from './ui/pages/App.tsx'\nconst = ;\n",
+    );
+    let out = run(&["--root", &arg, "check"]);
+    assert!(
+        stdout(&out).contains("src/main.tsx:2: cannot be read as TypeScript"),
+        "{}",
+        stdout(&out)
+    );
+
+    // Without handler, main.tsx belongs nowhere: code outside the layers like any other
+    write("src/main.tsx", "export {}\n");
+    fs::remove_dir_all(r.join("src/handler")).unwrap();
+    declare(
+        r,
+        "stack = \"typescript\"\nareas = [\"a\"]\nabsent = [\"handler\"]\n",
+    );
+    let out = run(&["--root", &arg, "check"]);
+    assert!(
+        stdout(&out).contains("code outside the layers: src/main.tsx"),
+        "{}",
+        stdout(&out)
+    );
+}
+
 #[test]
 fn a_tsconfig_rotproof_cannot_read_fails() {
     let root = repo_with_ui("typescript", "");

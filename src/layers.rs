@@ -93,6 +93,13 @@ pub struct Layout {
     /// Layer -> files that replace the ones in `layer`
     #[serde(default)]
     pub layers: BTreeMap<String, Override>,
+    /// Files a toolchain's starter puts outside the layers, each with the layer it belongs to by what it holds: path
+    /// from the root -> layer. Such a file is that layer's while the layer is present
+    #[serde(default)]
+    pub belongs: BTreeMap<String, String>,
+    /// Where code outside the layers goes in this stack, said in the finding for it
+    #[serde(default)]
+    pub where_code_goes: Option<String>,
 }
 
 /// One place in the tree a layout makes: a layer (`domain`) or a level of `ui` (`ui.pages`).
@@ -475,6 +482,26 @@ mod tests {
             }
             let places = layout.places(&table);
             assert!(places.len() >= 5, "{stack} makes {} places", places.len());
+            // A file a starter puts outside the layers belongs to a layer of this stack, and sits outside every layer
+            // in the scope where code is looked for
+            for (path, layer) in &layout.belongs {
+                assert!(
+                    places
+                        .iter()
+                        .any(|p| p.parent.is_none() && &p.name == layer),
+                    "{stack}: {path} belongs to {layer}, which the stack does not have"
+                );
+                assert!(
+                    !places
+                        .iter()
+                        .any(|p| path.starts_with(&format!("{}/", p.path))),
+                    "{stack}: {path} sits in a layer already"
+                );
+                assert!(
+                    path.starts_with(&format!("{}/", layout.scope)) && layout.is_code(path),
+                    "{stack}: {path} is not code in the scope"
+                );
+            }
             for place in &places {
                 assert!(
                     !place.files.is_empty(),

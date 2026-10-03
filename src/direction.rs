@@ -92,38 +92,51 @@ fn typescript(root: &Path, layout: &Layout, places: &[&Place]) -> io::Result<Dir
         .map(|why| format!("{why}; imports through it are not checked"))
         .collect();
     let parts = |path: &str| -> Vec<String> { path.split('/').map(String::from).collect() };
+    // Every source file of the layers with the place it sits in, and each file a starter puts outside the layers with
+    // the layer it belongs to, while that layer is there
+    let mut files: Vec<(String, &Place)> = Vec::new();
     for layer in places.iter().filter(|p| p.parent.is_none()) {
         for path in code_files(root, layout, &layer.path)? {
-            if !crate::typescript::is_source(&path) {
-                continue;
+            if let Some(from) = place_of(&parts(&path), places) {
+                files.push((path, from));
             }
-            let Some(from) = place_of(&parts(&path), places) else {
+        }
+    }
+    for (path, layer) in &layout.belongs {
+        let place = places.iter().find(|p| &p.name == layer);
+        if let Some(place) = place
+            && crate::source::exactly(root, path).is_ok_and(|full| full.is_file())
+        {
+            files.push((path.clone(), place));
+        }
+    }
+    for (path, from) in files {
+        if !crate::typescript::is_source(&path) {
+            continue;
+        }
+        let Some(source) = source_of(root, &path, &mut found)? else {
+            continue;
+        };
+        let read = crate::typescript::read(&source, &path);
+        if let Some((line, why)) = read.error {
+            found.push(format!(
+                "{path}:{line}: cannot be read as TypeScript ({why}), so the imports after it may be misread"
+            ));
+        }
+        for (line, specifier) in read.imports {
+            let Some(target) = aliases.resolve(root, &path, &specifier) else {
                 continue;
             };
-            let Some(source) = source_of(root, &path, &mut found)? else {
+            let Some(to) = place_of(&parts(&target), places) else {
                 continue;
             };
-            let read = crate::typescript::read(&source, &path);
-            if let Some((line, why)) = read.error {
-                found.push(format!(
-                    "{path}:{line}: cannot be read as TypeScript ({why}), so the imports after it may be misread"
-                ));
-            }
-            for (line, specifier) in read.imports {
-                let Some(target) = aliases.resolve(root, &path, &specifier) else {
-                    continue;
-                };
-                let Some(to) = place_of(&parts(&target), places) else {
-                    continue;
-                };
-                found.extend(judged(
-                    &table,
-                    &format!("{path}:{line}"),
-                    &format!("{specifier} ({target})"),
-                    from,
-                    to,
-                ));
-            }
+            found.extend(judged(
+                &table,
+                &format!("{path}:{line}"),
+                &format!("{specifier} ({target})"),
+                from,
+                to,
+            ));
         }
     }
     Ok(Direction {

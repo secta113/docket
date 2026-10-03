@@ -76,6 +76,11 @@ Start a project with `rotproof init --stack <stack>` (`python`, `typescript`, `r
 that keeps records only). It writes only the declaration, so you declare in `absent` the layers you do not want before
 anything is made, and it never overwrites a declaration that exists. Then run `rotproof create`.
 
+A TypeScript project with React starts from Vite: run `npm create vite@latest <name> -- --template react-ts` first,
+then `rotproof init --stack typescript` and `rotproof create` in it, which keep what Vite wrote. Vite's entry point,
+`src/main.tsx`, is `handler`'s where it is (`index.html` loads it); `rotproof check` names the rest of the starter
+(`App.tsx`, the styles, `assets/`) as code outside the layers, with where each goes.
+
 Run `rotproof create` when a project starts, and again after you change `.config/rotproof.toml` on purpose. It makes
 only what is missing: a layer that is neither present nor declared absent, the project's files when they do not exist
 (below), and the files Rotproof generates (`.rotproof/AGENTS.md`, and the index files and rules in `docs/`). It never
@@ -168,7 +173,7 @@ is written once per stack:
 | Stack | A layer is | A `ui` level is | Code Rotproof looks at |
 |---|---|---|---|
 | `python` | `<layer>/__init__.py`, the role as its docstring | `ui/<level>/__init__.py` | `.py` files anywhere (`.PY` too), except `tests/` |
-| `typescript` | `src/<layer>/index.ts`, the role as a doc comment | `src/ui/<level>/index.ts` (React) | every file in `src/` |
+| `typescript` | `src/<layer>/index.ts`, the role as a doc comment | `src/ui/<level>/index.ts` (React) | every file in `src/`; `src/main.tsx` (Vite's entry point) is `handler`'s |
 | `rust` | a crate, `crates/<layer>/` (`handler` a binary), the role as `//!` | none: Rust has no `ui` yet | every crate in `crates/` |
 
 `stack = "none"` declares a repository that keeps records only: `rotproof create` makes only `docs/`, and `Rotproof
