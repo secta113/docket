@@ -99,8 +99,9 @@ nothing in the backlog. `rotproof stop-hook` is the hook an agent runs when it s
 [Gemini CLI's `AfterAgent`](https://geminicli.com/docs/hooks/reference/), told apart by the event in their input. When
 the message holds a phrase that leaves something open and `git status` shows no change in `docs/`, the hook sends the
 agent back once, asking it to record the finding or to say in one line where it already is. While the agent is
-continuing because of a stop hook, the hook lets it stop, so it never loops. The phrases are built in (Japanese and
-English); the agent decides what each one meant.
+continuing because of a stop hook, the hook lets it stop, so it never loops. A line that points at the records (the
+word `spec` or `backlog`, or a path in `docs/done/`) is not read: what it leaves open is recorded where it points. The
+phrases are built in (Japanese and English); the agent decides what each one meant.
 
 `rotproof create` writes `.claude/settings.json` and `.gemini/settings.json` with the hook, each when it does not
 exist. A project that has one adds the hook to it:

@@ -16,7 +16,9 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::LazyLock;
 
+use regex::Regex;
 use serde_json::{Value, json};
 
 use crate::layers::DECLARATION;
@@ -103,6 +105,13 @@ pub const SETTINGS: [(&str, &str); 2] = [
     ),
 ];
 
+// A line that points at the records: the word spec, specs or backlog standing alone in ASCII (so `spec に`,
+// `docs/specs/x.md` and `Backlog` count, and `specific` or `inspect` do not), or a closed spec in docs/done/. Matched
+// against the line in lower case
+static RECORDS: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?:^|[^a-z0-9_])(?:specs?|backlog)(?:[^a-z0-9_]|$)|docs/done/").unwrap()
+});
+
 /// What in a report leaves something open, matched in any case. Words common in plain prose ("later") are left out:
 /// a hook that fires on every message is answered without reading.
 pub const PHRASES: [&str; 15] = [
@@ -174,9 +183,15 @@ fn decide(
     Ok(Some(agent.send_back(text).to_string()))
 }
 
-/// The phrases of [`PHRASES`] that `message` holds, in the order of the list.
+/// The phrases of [`PHRASES`] that `message` holds, in the order of the list. A line that points at the records is
+/// not read: what it leaves open is recorded where it points.
 fn open_phrases(message: &str) -> Vec<&'static str> {
-    let message = message.to_lowercase();
+    let message: String = message
+        .to_lowercase()
+        .lines()
+        .filter(|line| !RECORDS.is_match(line))
+        .collect::<Vec<_>>()
+        .join("\n");
     PHRASES
         .into_iter()
         .filter(|phrase| message.contains(phrase))
@@ -274,6 +289,26 @@ mod tests {
         for phrase in PHRASES {
             let upper = phrase.to_uppercase();
             assert_eq!(open_phrases(&format!("x {upper} y")), [phrase], "{phrase}");
+        }
+    }
+
+    #[test]
+    fn a_line_that_points_at_the_records_is_not_read() {
+        for line in [
+            "未決の問いは spec に書いた",
+            "未決の問いはspecに書いた",
+            "Backlog: the PATH is not checked",
+            "- [x.md](docs/specs/x.md): 未確認",
+            "閉じた [y.md](/backlog/y.md) は未着手のまま",
+            "[z.md](docs/done/z.md) で見送った",
+        ] {
+            assert_eq!(open_phrases(line), Vec::<&str>::new(), "{line}");
+        }
+        // Only that line: the next one is read
+        assert_eq!(open_phrases("spec に書いた\nLinux は未確認"), ["未確認"]);
+        // A word that only contains spec is not a pointer
+        for line in ["the specific path is not checked", "inspect: not checked"] {
+            assert_eq!(open_phrases(line), ["not checked"], "{line}");
         }
     }
 
