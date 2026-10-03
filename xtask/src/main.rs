@@ -183,6 +183,13 @@ fn toolchain(root: &Path) -> Result<Vec<String>, String> {
     ))
 }
 
+fn install_version(root: &Path) -> Result<Vec<String>, String> {
+    Ok(drift::install_problems(
+        &read(root, "Cargo.toml")?,
+        &read(root, "README.md")?,
+    ))
+}
+
 /// The version of cargo-about the Dockerfile and the licenses workflow install
 fn pinned_about(root: &Path) -> Result<String, String> {
     licenses::pinned_version(&read(root, "Dockerfile")?, &read(root, licenses::WORKFLOW)?)
@@ -317,6 +324,10 @@ fn main() -> ExitCode {
     results.push((
         "Toolchain version",
         report("Toolchain version", toolchain(root)),
+    ));
+    results.push((
+        "Install version (README)",
+        report("Install version (README)", install_version(root)),
     ));
     results.push((
         "Third-party licenses",

@@ -2,8 +2,10 @@ name: Licenses
 
 # THIRD-PARTY-LICENSES.txt against what cargo-about writes. Building cargo-about takes minutes, so this runs only when
 # what the text is made from changes. Every run of CI checks the list of crates without it (`cargo xtask ci`), so a
-# change to the dependencies fails there until the file is written again
+# change to the dependencies fails there until the file is written again. release.yml calls it before every release,
+# so cargo-about is pinned here and in the Dockerfile only
 on:
+  workflow_call:
   push:
     paths: &paths
       - Cargo.lock

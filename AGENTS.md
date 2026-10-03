@@ -13,7 +13,7 @@ and why, is in `README.md`.
 | `tests/` | Tests that run the built binary as a user runs it (`cli.rs`) |
 | `xtask/` | The CI entry point (`cargo xtask ci`), and `cargo xtask licenses`, which writes `THIRD-PARTY-LICENSES.txt` (`--check`: checks it) |
 | `.cargo/` | The `cargo xtask` alias |
-| `.github/` | GitHub Actions: `ci.yml` runs `cargo xtask ci` in the container, and builds and installs the wheels on Linux and Windows; `licenses.yml` checks `THIRD-PARTY-LICENSES.txt` with cargo-about |
+| `.github/` | GitHub Actions: `ci.yml` runs `cargo xtask ci` in the container, and builds and installs the wheels on Linux and Windows; `licenses.yml` checks `THIRD-PARTY-LICENSES.txt` with cargo-about; `release.yml` releases a pushed tag to PyPI and GitHub Releases, after running each wheel through `smoke.sh` |
 | `Cargo.toml` | The package, and the one place that names docket's version (maturin takes the wheel version from it) |
 | `rust-toolchain.toml` | The one place that names the toolchain. The Dockerfile and CI install from it |
 | `Dockerfile`, `compose.yaml` | The development container: the Linux of CI, with the packaging tools and cargo-about |
@@ -75,3 +75,6 @@ Also tracked, as in most repositories: `.gitattributes`, `.gitignore`, `Cargo.lo
 - **Try a wheel as a user gets it:** build it (README) and `pip install` it into a fresh venv, outside the build tree.
 - **A change that can fail records that passed before (a new rule, a stricter rule) raises the minor version** while
   docket is `0.x`. Projects pin the exact version, so they take the change in a commit of their own.
+- **Raise the version in `Cargo.toml` and the `pip install docket==<version>` in `README.md` together;** `cargo xtask
+  ci` fails while they differ (the README is the page on PyPI). Release by pushing the tag `v<version>` of that
+  commit. Before the tag, `gh workflow run release.yml` builds and tests the release without publishing it.

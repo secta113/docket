@@ -1,0 +1,218 @@
+name: Release
+
+# A pushed tag v<version> releases docket: the wheels to PyPI, and the wheels with an archive of the binary per platform
+# to a GitHub Release. What is released is what was tested: the archives hold the binary taken out of the tested wheel.
+# Run by hand (workflow_dispatch), it builds, tests and packages everything and publishes nothing
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # Each job may run about five times its slowest run, rounded up to ten minutes, as in CI
+  version:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup toolchain install
+      - name: The tag names the version in Cargo.toml
+        if: github.ref_type == 'tag'
+        run: |
+          version=$(cargo metadata --locked --no-deps --format-version 1 \
+            | python3 -c 'import json, sys; print(next(p["version"] for p in json.load(sys.stdin)["packages"] if p["name"] == "docket"))')
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::the tag is $GITHUB_REF_NAME, but Cargo.toml names $version"
+            exit 1
+          fi
+
+  # THIRD-PARTY-LICENSES.txt against what cargo-about writes, with the cargo-about that workflow pins
+  licenses:
+    uses: ./.github/workflows/licenses.yml
+
+  wheels:
+    strategy:
+      matrix:
+        include:
+          - platform: linux
+            os: ubuntu-latest
+          - platform: windows
+            os: windows-latest
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      # The oldest glibc the wheel claims is the one it is built against: inside the manylinux2014 image (glibc 2.17).
+      # The jobs cannot run in that image, since the actions need a newer glibc, so the build runs in it with docker.
+      # The toolchain comes from rust-toolchain.toml and maturin from requirements-build.txt, as everywhere else
+      - name: Build (manylinux2014)
+        if: matrix.platform == 'linux'
+        run: |
+          docker run --rm -v "$PWD:/io" -w /io quay.io/pypa/manylinux2014_x86_64:latest bash -euo pipefail -c '
+            curl --proto =https --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
+            . "$HOME/.cargo/env"
+            rustup toolchain install --profile minimal
+            /opt/python/cp313-cp313/bin/python -m venv /opt/build
+            /opt/build/bin/pip install "$(grep "^maturin==" requirements-build.txt)"
+            /opt/build/bin/maturin build --release --locked --compatibility manylinux2014 --out dist
+          '
+      - if: matrix.platform == 'windows'
+        run: rustup toolchain install
+      - if: matrix.platform == 'windows'
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - name: Build (MSVC)
+        if: matrix.platform == 'windows'
+        shell: bash
+        run: |
+          pip install "$(grep '^maturin==' requirements-build.txt)"
+          maturin build --release --locked --out dist
+      - uses: actions/upload-artifact@v7
+        with:
+          name: wheel-${{ matrix.platform }}
+          path: dist/*.whl
+          if-no-files-found: error
+
+  # Each wheel is installed into a fresh venv on its platform and run as a user runs it (.github/smoke.sh)
+  test:
+    needs: wheels
+    strategy:
+      matrix:
+        include:
+          - platform: linux
+            os: ubuntu-latest
+          - platform: windows
+            os: windows-latest
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v7
+        with:
+          name: wheel-${{ matrix.platform }}
+          path: dist
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - name: Install into a fresh venv, and run
+        run: |
+          python -m venv "$RUNNER_TEMP/venv"
+          # activate turns the Windows path of RUNNER_TEMP into one bash can put on PATH
+          if [ -f "$RUNNER_TEMP/venv/Scripts/activate" ]; then
+            . "$RUNNER_TEMP/venv/Scripts/activate"
+          else
+            . "$RUNNER_TEMP/venv/bin/activate"
+          fi
+          python -m pip install --no-index --find-links dist docket
+          bash .github/smoke.sh
+      # pip in the manylinux2014 image (glibc 2.17) installs the wheel only if its tag allows that glibc, and the binary
+      # runs there only if it needs no newer one
+      - name: Install and run in the oldest Linux the tag claims
+        if: matrix.platform == 'linux'
+        run: |
+          docker run --rm -v "$PWD:/io" -w /io quay.io/pypa/manylinux2014_x86_64:latest bash -euo pipefail -c '
+            ldd --version | sed -n 1p
+            /opt/python/cp313-cp313/bin/python -m venv /opt/venv
+            /opt/venv/bin/pip install --no-index --find-links dist docket
+            PATH="/opt/venv/bin:$PATH" bash .github/smoke.sh
+          '
+
+  # The wheels, an archive of the binary per platform with the licenses next to it, and SHA256SUMS
+  package:
+    needs: [version, licenses, test]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: wheel-*
+          path: dist
+          merge-multiple: true
+      - name: Make the archives
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          wheels=(dist/*.whl)
+          # The floor: one wheel per platform in the table of the publishing spec
+          if [ "${#wheels[@]}" -ne 2 ]; then
+            echo "::error::${#wheels[@]} wheels, but 2 platforms: ${wheels[*]}"
+            exit 1
+          fi
+          linux=(dist/*-manylinux_2_17_x86_64.manylinux2014_x86_64.whl)
+          windows=(dist/*-win_amd64.whl)
+          if [ "${#linux[@]}" -ne 1 ] || [ "${#windows[@]}" -ne 1 ]; then
+            echo "::error::expected one manylinux2014 x86_64 wheel and one win_amd64 wheel: ${wheels[*]}"
+            exit 1
+          fi
+          mkdir archives
+          pack() { # wheel, target, binary name, archive command
+            local wheel=$1 target=$2 binary=$3 version dir
+            version=$(basename "$wheel" | cut -d- -f2)
+            dir="docket-v$version-$target"
+            mkdir -p "work/$dir"
+            unzip -q -o "$wheel" -d "work/wheel-$target"
+            cp "work/wheel-$target"/docket-*.data/scripts/"$binary" "work/$dir/"
+            cp "work/wheel-$target"/docket-*.dist-info/licenses/* "work/$dir/"
+            echo "$dir"
+          }
+          dir=$(pack "${linux[0]}" x86_64-unknown-linux-gnu docket)
+          chmod +x "work/$dir/docket"
+          tar -czf "archives/$dir.tar.gz" -C work "$dir"
+          dir=$(pack "${windows[0]}" x86_64-pc-windows-msvc docket.exe)
+          (cd work && zip -q -r "../archives/$dir.zip" "$dir")
+          (cd dist && sha256sum -- *.whl) > SHA256SUMS
+          (cd archives && sha256sum -- *) >> SHA256SUMS
+          cat SHA256SUMS
+          for a in archives/*; do echo "$a:"; (tar -tzf "$a" 2>/dev/null || unzip -Z1 "$a") | sed 's/^/  /'; done
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release
+          path: |
+            dist/*.whl
+            archives/*
+            SHA256SUMS
+          if-no-files-found: error
+
+  # Trusted Publishing: no token is stored. The PyPI project trusts this repository, this workflow and the environment
+  pypi:
+    if: github.ref_type == 'tag'
+    needs: package
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          name: release
+          path: release
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: release/dist
+
+  github-release:
+    if: github.ref_type == 'tag'
+    needs: pypi
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          name: release
+          path: release
+      - name: Make the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$GITHUB_REF_NAME" \
+            --generate-notes release/dist/*.whl release/archives/* release/SHA256SUMS

@@ -132,6 +132,40 @@ pub fn toolchain_problems(toolchain: &str, dockerfile: &str, ci: &str) -> Vec<St
     found
 }
 
+/// Where the version the README installs (`pip install docket==<version>`) differs from the one in `Cargo.toml`. The
+/// README is the page on PyPI, so a version left behind would tell every reader to install an old docket. A README that
+/// names no version is a problem too.
+pub fn install_problems(cargo_toml: &str, readme: &str) -> Vec<String> {
+    let mut in_package = false;
+    let version = cargo_toml.lines().find_map(|l| {
+        if l.starts_with('[') {
+            in_package = l.trim() == "[package]";
+            return None;
+        }
+        let (key, value) = l.split_once('=')?;
+        (in_package && key.trim() == "version").then(|| value.trim().trim_matches('"').to_string())
+    });
+    let Some(version) = version else {
+        return vec!["Cargo.toml names no version under [package]".into()];
+    };
+    let installed: Vec<&str> = readme
+        .split("pip install docket==")
+        .skip(1)
+        .filter_map(|rest| {
+            rest.split(|c: char| !(c.is_ascii_alphanumeric() || ".-+".contains(c)))
+                .next()
+        })
+        .collect();
+    if installed.is_empty() {
+        return vec!["README.md installs no version (pip install docket==<version>)".into()];
+    }
+    installed
+        .iter()
+        .filter(|v| **v != version)
+        .map(|v| format!("README.md installs docket=={v}, but Cargo.toml names {version}"))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -265,6 +299,35 @@ Also tracked: `c`.
                 "Dockerfile names no rust image",
                 ".github/workflows/ci.yml names no rust image",
             ]
+        );
+    }
+
+    const CARGO: &str = "[package]\nname = \"docket\"\nversion = \"0.2.0\"\n\n[dependencies]\nfoo = { version = \"1\" }\n";
+
+    #[test]
+    fn the_version_the_readme_installs_is_the_one_in_cargo_toml() {
+        let readme = "```sh\npip install docket==0.2.0\n```\n";
+        assert_eq!(install_problems(CARGO, readme), Vec::<String>::new());
+    }
+
+    #[test]
+    fn an_old_version_in_the_readme_fails() {
+        let readme = "pip install docket==0.2.0\n\nor `pip install docket==0.1.0`\n";
+        assert_eq!(
+            install_problems(CARGO, readme),
+            ["README.md installs docket==0.1.0, but Cargo.toml names 0.2.0"]
+        );
+    }
+
+    #[test]
+    fn a_version_that_cannot_be_found_fails_too() {
+        assert_eq!(
+            install_problems(CARGO, "pip install docket\n"),
+            ["README.md installs no version (pip install docket==<version>)"]
+        );
+        assert_eq!(
+            install_problems("[workspace]\nversion = \"1\"\n", "pip install docket==1\n"),
+            ["Cargo.toml names no version under [package]"]
         );
     }
 }
