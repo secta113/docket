@@ -40,7 +40,7 @@ pub fn problems(root: &Path, declared: &Declared) -> io::Result<Direction> {
         return Ok(Direction {
             found: Vec::new(),
             skipped: Some(format!(
-                "the direction of imports is not checked: docket does not read the imports of a {} project yet",
+                "the direction of imports is not checked: rotproof does not read the imports of a {} project yet",
                 declared.declaration.stack
             )),
         });

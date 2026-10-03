@@ -132,9 +132,9 @@ pub fn toolchain_problems(toolchain: &str, dockerfile: &str, ci: &str) -> Vec<St
     found
 }
 
-/// Where the version the README installs (`pip install docket==<version>`) differs from the one in `Cargo.toml`. The
-/// README is the page on PyPI, so a version left behind would tell every reader to install an old docket. A README that
-/// names no version is a problem too.
+/// Where the version the README installs (`pip install rotproof==<version>`) differs from the one in `Cargo.toml`. The
+/// README is the page on PyPI, so a version left behind would tell every reader to install an old rotproof. A README
+/// that names no version is a problem too.
 pub fn install_problems(cargo_toml: &str, readme: &str) -> Vec<String> {
     let mut in_package = false;
     let version = cargo_toml.lines().find_map(|l| {
@@ -149,7 +149,7 @@ pub fn install_problems(cargo_toml: &str, readme: &str) -> Vec<String> {
         return vec!["Cargo.toml names no version under [package]".into()];
     };
     let installed: Vec<&str> = readme
-        .split("pip install docket==")
+        .split("pip install rotproof==")
         .skip(1)
         .filter_map(|rest| {
             rest.split(|c: char| !(c.is_ascii_alphanumeric() || ".-+".contains(c)))
@@ -157,12 +157,12 @@ pub fn install_problems(cargo_toml: &str, readme: &str) -> Vec<String> {
         })
         .collect();
     if installed.is_empty() {
-        return vec!["README.md installs no version (pip install docket==<version>)".into()];
+        return vec!["README.md installs no version (pip install rotproof==<version>)".into()];
     }
     installed
         .iter()
         .filter(|v| **v != version)
-        .map(|v| format!("README.md installs docket=={v}, but Cargo.toml names {version}"))
+        .map(|v| format!("README.md installs rotproof=={v}, but Cargo.toml names {version}"))
         .collect()
 }
 
@@ -302,31 +302,34 @@ Also tracked: `c`.
         );
     }
 
-    const CARGO: &str = "[package]\nname = \"docket\"\nversion = \"0.2.0\"\n\n[dependencies]\nfoo = { version = \"1\" }\n";
+    const CARGO: &str = "[package]\nname = \"rotproof\"\nversion = \"0.2.0\"\n\n[dependencies]\nfoo = { version = \"1\" }\n";
 
     #[test]
     fn the_version_the_readme_installs_is_the_one_in_cargo_toml() {
-        let readme = "```sh\npip install docket==0.2.0\n```\n";
+        let readme = "```sh\npip install rotproof==0.2.0\n```\n";
         assert_eq!(install_problems(CARGO, readme), Vec::<String>::new());
     }
 
     #[test]
     fn an_old_version_in_the_readme_fails() {
-        let readme = "pip install docket==0.2.0\n\nor `pip install docket==0.1.0`\n";
+        let readme = "pip install rotproof==0.2.0\n\nor `pip install rotproof==0.1.0`\n";
         assert_eq!(
             install_problems(CARGO, readme),
-            ["README.md installs docket==0.1.0, but Cargo.toml names 0.2.0"]
+            ["README.md installs rotproof==0.1.0, but Cargo.toml names 0.2.0"]
         );
     }
 
     #[test]
     fn a_version_that_cannot_be_found_fails_too() {
         assert_eq!(
-            install_problems(CARGO, "pip install docket\n"),
-            ["README.md installs no version (pip install docket==<version>)"]
+            install_problems(CARGO, "pip install rotproof\n"),
+            ["README.md installs no version (pip install rotproof==<version>)"]
         );
         assert_eq!(
-            install_problems("[workspace]\nversion = \"1\"\n", "pip install docket==1\n"),
+            install_problems(
+                "[workspace]\nversion = \"1\"\n",
+                "pip install rotproof==1\n"
+            ),
             ["Cargo.toml names no version under [package]"]
         );
     }

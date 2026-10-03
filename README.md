@@ -1,84 +1,84 @@
-# docket
+# rotproof
 
-docket keeps a project's structure from drifting while LLMs and people change it. It keeps two structures:
+rotproof keeps a project's structure from drifting while LLMs and people change it. It keeps two structures:
 
 - **The layers:** which part of the code may import which (`handler`, `application`, `domain`, `infrastructure`,
   `utils`, and an optional `ui`). Code that cannot be split into these layers mixes responsibilities, so the layers
   are how an LLM, or a person, is made to split it: every piece of code has to land in a layer whose role and allowed
-  imports are written down. docket makes them when a project starts and checks them on every run, so the direction
+  imports are written down. rotproof makes them when a project starts and checks them on every run, so the direction
   of dependencies stays what it was meant to be.
 - **The specs and records:** what is open, what is agreed, what is finished and why. A backlog (open defects and
   postponed work, each with a trigger, a state and a deadline), specs, and a log, each kept to strict rules.
 
 ## Principles
 
-- **The declaration is the truth, and docket does not repair.** The structure a project declares is the structure. A
+- **The declaration is the truth, and rotproof does not repair.** The structure a project declares is the structure. A
   tree that differs from it fails, either way, and someone decides whether the tree or the declaration is wrong;
-  docket changes the tree only when asked.
+  rotproof changes the tree only when asked.
 - **Every rule has a check that can fail.** A rule without a check is only a label, and soon drifts.
 - **A check with nothing to check fails.** A check that passes on an empty tree protects nothing.
-- **The rules come with the tool.** A project pins one version of docket, and takes improvements to the rules by
+- **The rules come with the tool.** A project pins one version of rotproof, and takes improvements to the rules by
   upgrading it, in a commit of its own.
-- **The same structure in every language.** docket is one binary with no language runtime, so a Rust or TypeScript
+- **The same structure in every language.** rotproof is one binary with no language runtime, so a Rust or TypeScript
   project keeps the same layers and records as a Python one.
 - **Whoever picks up the work next reads one index, not every file.** The index files are generated, never written by
   hand.
 
-docket makes the layer directories, checks that they are where the project declares them, and reads the imports to
-check their direction: in Python now, with Rust and TypeScript to follow. For those two, `docket check` says that it
+rotproof makes the layer directories, checks that they are where the project declares them, and reads the imports to
+check their direction: in Python now, with Rust and TypeScript to follow. For those two, `rotproof check` says that it
 did not check the direction.
 
 The records live in `docs/`, which is a bundle in [OKF 0.2](https://github.com/GoogleCloudPlatform/open-knowledge-format)
 (its `SPEC.md` as of commit `ad30107`): every document has YAML frontmatter with a `type`, `index.md` and `log.md` are
 reserved names, and the log's headings are dates. An OKF reader can read the records as a bundle. The rules on top of
 that format (a backlog item's trigger, state and deadline, a spec's status and directory, the shape of a log entry)
-are docket's own, stricter than OKF, and not part of it. docket is not an OKF validator.
+are rotproof's own, stricter than OKF, and not part of it. rotproof is not an OKF validator.
 
 ## Install
 
-docket is released for Windows x86_64 and Linux x86_64 (glibc 2.17 or newer). Pin the exact version, so that an
+rotproof is released for Windows x86_64 and Linux x86_64 (glibc 2.17 or newer). Pin the exact version, so that an
 upgrade, which can bring new rules, is a commit of its own:
 
 ```sh
-pip install docket==0.1.0
+pip install rotproof==0.1.0
 ```
 
 The wheel carries only the binary; no Python code runs. Without Python, take the archive for your platform from
-[GitHub Releases](https://github.com/secta113/docket/releases) and check it against `SHA256SUMS` there. Each archive
+[GitHub Releases](https://github.com/secta113/rotproof/releases) and check it against `SHA256SUMS` there. Each archive
 holds the binary with `LICENSE-MIT`, `LICENSE-APACHE` and `THIRD-PARTY-LICENSES.txt`.
 
-On another platform, pip finds no docket to install. Build it from source with [rustup](https://rustup.rs/) installed
+On another platform, pip finds no rotproof to install. Build it from source with [rustup](https://rustup.rs/) installed
 (the toolchain version comes from `rust-toolchain.toml`):
 
 ```sh
-cargo build --release   # the binary is target/release/docket (docket.exe on Windows)
+cargo build --release   # the binary is target/release/rotproof (rotproof.exe on Windows)
 ```
 
 ## Usage
 
 ```sh
-docket --root <repository> init --stack python  # write .config/docket.toml, once
-docket --root <repository> create  # make the layers .config/docket.toml declares, and the records skeleton
-docket --root <repository> check   # check the layers and the records; exits 1 when a rule is broken
-docket --root <repository> index   # write every generated file in docs/ (the index files and the rules)
+rotproof --root <repository> init --stack python  # write .config/rotproof.toml, once
+rotproof --root <repository> create  # make the layers .config/rotproof.toml declares, and the records skeleton
+rotproof --root <repository> check   # check the layers and the records; exits 1 when a rule is broken
+rotproof --root <repository> index   # write every generated file in docs/ (the index files and the rules)
 ```
 
-`--root` defaults to the current directory. The declaration is read from `<repository>/.config/docket.toml`, and the
+`--root` defaults to the current directory. The declaration is read from `<repository>/.config/rotproof.toml`, and the
 records from `<repository>/docs`.
 
-Start a project with `docket init --stack <stack>` (`python`, `typescript`, `rust`, or `none` for a repository
+Start a project with `rotproof init --stack <stack>` (`python`, `typescript`, `rust`, or `none` for a repository
 that keeps records only). It writes only the declaration, so you declare in `absent` the layers you do not want before
-anything is made, and it never overwrites a declaration that exists. Then run `docket create`.
+anything is made, and it never overwrites a declaration that exists. Then run `rotproof create`.
 
-Run `docket create` when a project starts, and again after you change `.config/docket.toml` on purpose. It makes only
-what is missing: a layer that is neither present nor declared absent, `docs/log.md` when there is none, and the files
-docket generates. It never overwrites a file it does not generate, and never moves or deletes one. Nothing runs it on
-its own, so a layer removed by mistake fails `docket check` instead of coming back.
+Run `rotproof create` when a project starts, and again after you change `.config/rotproof.toml` on purpose. It makes
+only what is missing: a layer that is neither present nor declared absent, `docs/log.md` when there is none, and the
+files rotproof generates. It never overwrites a file it does not generate, and never moves or deletes one. Nothing runs
+it on its own, so a layer removed by mistake fails `rotproof check` instead of coming back.
 
-Run it also after upgrading docket. When a newer docket requires a field the declaration lacks, `docket check` fails
-and says so, and `docket create` adds the field under a comment that says what it is and where its first value came
-from (`areas` gets the tags the records use, sorted by name), keeping every comment and value already there. A value
-that is present is never changed, so an upgrade fails only on what the new rules find.
+Run it also after upgrading rotproof. When a newer rotproof requires a field the declaration lacks, `rotproof check`
+fails and says so, and `rotproof create` adds the field under a comment that says what it is and where its first value
+came from (`areas` gets the tags the records use, sorted by name), keeping every comment and value already there. A
+value that is present is never changed, so an upgrade fails only on what the new rules find.
 
 The index files only help if your agent reads them. Point it at them in your `AGENTS.md` (or whatever file your agent
 reads first), for example:
@@ -91,28 +91,28 @@ reads first), for example:
 
 ## The layers
 
-A project declares its structure in `.config/docket.toml`, the directory tools share for their configuration.
-`docket init` writes it, and from then on it is the project's file. pip installs only the docket binary: the layer
+A project declares its structure in `.config/rotproof.toml`, the directory tools share for their configuration.
+`rotproof init` writes it, and from then on it is the project's file. pip installs only the rotproof binary: the layer
 definitions are built into it, and the declaration is never shipped with it.
 
 ```toml
 stack = "python"         # python | typescript | rust | none
 areas = ["billing", "records"]  # the areas the records are grouped by, in this order (see The records)
 absent = ["ui"]          # layers this project does not have
-unchecked = ["scripts"]  # paths outside the layers that docket does not look into
+unchecked = ["scripts"]  # paths outside the layers that rotproof does not look into
 ```
 
 What the layers are (`handler`, `ui`, `application`, `infrastructure`, `domain`, `utils`, and the atomic levels of
 `ui`: `pages`, `templates`, `organisms`, `molecules`, `atoms`) is written once, in `layers/table.toml`. Where they live
 is written once per stack:
 
-| Stack | A layer is | A `ui` level is | Code docket looks at |
+| Stack | A layer is | A `ui` level is | Code rotproof looks at |
 |---|---|---|---|
 | `python` | `<layer>/__init__.py`, the role as its docstring | `ui/<level>/__init__.py` | `.py` files anywhere (`.PY` too), except `tests/` and `ci.py` |
 | `typescript` | `src/<layer>/index.ts`, the role as a doc comment | `src/ui/<level>/index.ts` (React) | every file in `src/` |
 | `rust` | a crate, `crates/<layer>/` (`handler` a binary), the role as `//!` | none: Rust has no `ui` yet | every crate in `crates/` |
 
-`stack = "none"` declares a repository that keeps records only: `docket create` makes only `docs/`, and `docket
+`stack = "none"` declares a repository that keeps records only: `rotproof create` makes only `docs/`, and `rotproof
 check` checks only the records and prints that it did not check the layers. It is a line in the declaration, not a
 flag, so the structure check is never switched off where the declaration still declares layers.
 
@@ -149,9 +149,9 @@ an order of work of its own; a part names it by slug (its file name without `.md
 
 ```yaml
 type: Spec
-title: Publish docket for every stack
+title: Publish rotproof for every stack
 status: stable
-tags: [docket]
+tags: [rotproof]
 epic: template-multi-stack
 ```
 
@@ -183,9 +183,9 @@ stale_after: 2027-01-01T00:00:00+09:00   # optional: when to measure the state a
 # Resolution    (only when closed)
 ```
 
-## What `docket check` checks
+## What `rotproof check` checks
 
-- **The tree matches `.config/docket.toml`, either way:** the declaration exists and names a known stack, and only
+- **The tree matches `.config/rotproof.toml`, either way:** the declaration exists and names a known stack, and only
   layers that stack has in `absent` (a misspelled field fails). Every layer of the stack is present or declared
   absent, and no layer declared absent is present. No code sits outside the layers, the stack's own paths (`tests/`)
   and `unchecked`. A path in `unchecked` exists and neither holds nor sits in a layer, so a layer cannot be switched
@@ -204,14 +204,14 @@ stale_after: 2027-01-01T00:00:00+09:00   # optional: when to measure the state a
 - **The bundle is there:** `docs/`, `docs/index.md`, `docs/backlog/`, `docs/backlog/rules.md`, `docs/specs/`,
   `docs/specs/rules.md` and `docs/done/` exist, and the declaration with its `areas` can be read. Without them every other check would pass
   with nothing checked.
-- **Every name is compared exactly,** wherever docket looks for a file or a directory: a link's target, the files
-  above, the layers and the declaration. docket reads the names the directories hold instead of asking the
+- **Every name is compared exactly,** wherever rotproof looks for a file or a directory: a link's target, the files
+  above, the layers and the declaration. rotproof reads the names the directories hold instead of asking the
   operating system, which on Windows also finds `README.md` for `readme.md`, `README.md.`, `README.md `, a stream
   (`README.md:secret`) or a short name (`README~1.MD`). Linux and GitHub find none of them, so each fails, and the
   message says what the disk has.
 - **The areas are distinct headings:** none is empty, has a space at either end or a line break, and no two differ only in case.
 - **Every backlog item keeps the format:** the fields above with their types, and non-empty Trigger, State and Details
-  (and Resolution when closed). A field docket does not know passes as an extension, as OKF allows, unless it looks
+  (and Resolution when closed). A field rotproof does not know passes as an extension, as OKF allows, unless it looks
   like a misspelling of a field the document type has (`stale_afer`, `staleAfter`, `Title`), or is a field only
   another type has (a backlog item's `deadline` on a spec, a spec's `epic` on a backlog item): those fail, in every
   document type, as a misspelled optional field would otherwise be silently dropped. A deadline is an event or a reason, never only a date
@@ -246,11 +246,11 @@ stale_after: 2027-01-01T00:00:00+09:00   # optional: when to measure the state a
   first date fails. A new log, with only its title and HTML comments, passes.
 - **Every document is a known type in its directory.** The fields OKF defines for a document pass as OKF writes them
   (`generated` needs only `by`; every entry of `sources` needs a `resource`; `usage_window` is a `{from, to}` range).
-  The names OKF reserves appear only where docket writes and reads them: `index.md` in `docs/` and in each directory
+  The names OKF reserves appear only where rotproof writes and reads them: `index.md` in `docs/` and in each directory
   of documents, `log.md` in `docs/`. A markdown file is named `.md`, in lowercase: GitHub shows a `.MD` file, but
-  docket would not read it.
-- **Every file docket generates equals what `docket index` writes:** the index files, so nobody maintains a list by
-  hand, and `docs/backlog/rules.md` and `docs/specs/rules.md`, so the rules a project reads are the rules its docket
+  rotproof would not read it.
+- **Every file rotproof generates equals what `rotproof index` writes:** the index files, so nobody maintains a list by
+  hand, and `docs/backlog/rules.md` and `docs/specs/rules.md`, so the rules a project reads are the rules its rotproof
   checks. A project's own rules go in another guide in `docs/backlog/` or `docs/specs/`.
 - **No spec sits at the repository root.**
 
@@ -269,7 +269,7 @@ list the crates the binary links (below). On Windows the host needs Visual Studi
 Everything also runs in the container (`compose.yaml`), where the host needs only Docker:
 `docker compose run --rm dev cargo xtask ci`.
 
-The binary links the crates docket depends on, and their licenses require their notices to go with it.
+The binary links the crates rotproof depends on, and their licenses require their notices to go with it.
 `THIRD-PARTY-LICENSES.txt` holds them: every crate the binary links on any platform, with the license text each one
 ships. It is generated by [cargo-about](https://github.com/EmbarkStudios/cargo-about) from `about.toml` and the
 template `about.hbs`, never edited by hand:
@@ -281,7 +281,7 @@ cargo xtask licenses --check   # fails where the file differs from what cargo-ab
 
 Both need cargo-about at the version the `Dockerfile` installs (`cargo install --locked --features cli
 cargo-about@<version>`); the container has it. The generation fails when a crate's license cannot be met from
-`accepted` in `about.toml`, the licenses docket agrees to ship. cargo-about takes minutes to build, so `cargo xtask
+`accepted` in `about.toml`, the licenses rotproof agrees to ship. cargo-about takes minutes to build, so `cargo xtask
 ci` checks only the list of crates, against `cargo tree`, which needs cargo alone: a new or bumped dependency fails
 there until the file is written again. The text is checked by `.github/workflows/licenses.yml`, on a push that changes
 the dependencies, `about.toml`, `about.hbs` or the file itself. The Dockerfile and that workflow install the same

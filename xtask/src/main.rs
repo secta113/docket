@@ -204,7 +204,7 @@ fn linked_crates(cargo: &str, root: &Path) -> Result<BTreeSet<String>, String> {
         TREE_LIMIT,
         cargo,
         &[
-            "tree", "--locked", "-p", "docket", "-e", "normal", "--target", "all", "--prefix",
+            "tree", "--locked", "-p", "rotproof", "-e", "normal", "--target", "all", "--prefix",
             "none", "--format", "{p}",
         ],
     )?;

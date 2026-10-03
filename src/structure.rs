@@ -1,4 +1,4 @@
-//! The structure check: the tree agrees with `.config/docket.toml`, either way.
+//! The structure check: the tree agrees with `.config/rotproof.toml`, either way.
 //!
 //! - Every layer of the stack's layout is present or declared absent, and no layer declared absent is present.
 //! - No code sits outside the layers, except in the stack's paths that are not layers (`tests/`) and the paths the
@@ -80,10 +80,10 @@ pub fn problems(root: &Path) -> io::Result<Structure> {
                 place.name, place.path
             )),
             (false, false) => found.push(match exactly(root, &place.path) {
-                // A directory in another case: `docket create` would write into it on Windows, and fix nothing
+                // A directory in another case: `rotproof create` would write into it on Windows, and fix nothing
                 Err(why) if why.contains(" is there") => format!("{} is {why}", place.name),
                 _ => format!(
-                    "{} is missing: {}/ (run `docket create`, or declare it in absent in {DECLARATION})",
+                    "{} is missing: {}/ (run `rotproof create`, or declare it in absent in {DECLARATION})",
                     place.name, place.path
                 ),
             }),
@@ -116,7 +116,7 @@ pub fn problems(root: &Path) -> io::Result<Structure> {
             || path.contains(':')
             || path.split('/').any(|part| matches!(part, "" | "." | ".."))
         {
-            // `./scripts` would never equal the paths docket compares it with, and would switch nothing off silently
+            // `./scripts` would never equal the paths rotproof compares it with, and would switch nothing off silently
             found.push(format!(
                 "unchecked lists {path:?}: write a path from the root, such as scripts or src/generated"
             ));

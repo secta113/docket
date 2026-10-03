@@ -4,7 +4,7 @@
 ignore-build-dependencies = true
 ignore-dev-dependencies = true
 
-# The licenses docket may ship, in the order cargo-about picks among the choices a crate offers (MIT for a crate that
+# The licenses rotproof may ship, in the order cargo-about picks among the choices a crate offers (MIT for a crate that
 # is MIT OR Apache-2.0). A crate whose license cannot be met from this list fails the generation, so a new license is
 # decided here, in a commit of its own, never shipped unseen. Keep it to what a crate needs: an entry nothing uses
 # would let a new license in without a decision.

@@ -307,26 +307,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "docket"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "clap",
- "ignore",
- "percent-encoding",
- "pulldown-cmark",
- "regex",
- "ruff_python_ast",
- "ruff_python_parser",
- "serde",
- "tempfile",
- "toml",
- "toml_edit",
- "unicode-general-category",
- "yaml-rust2",
-]
-
-[[package]]
 name = "drop_bomb"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -879,6 +859,26 @@ name = "regex-syntax"
 version = "0.8.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
+
+[[package]]
+name = "rotproof"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "clap",
+ "ignore",
+ "percent-encoding",
+ "pulldown-cmark",
+ "regex",
+ "ruff_python_ast",
+ "ruff_python_parser",
+ "serde",
+ "tempfile",
+ "toml",
+ "toml_edit",
+ "unicode-general-category",
+ "yaml-rust2",
+]
 
 [[package]]
 name = "ruff_python_ast"

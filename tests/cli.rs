@@ -5,7 +5,7 @@ use std::path::Path;
 use std::process::{Command, Output};
 
 fn run(args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_docket"))
+    Command::new(env!("CARGO_BIN_EXE_rotproof"))
         .args(args)
         .output()
         .expect("the binary runs")
@@ -25,11 +25,11 @@ fn repo() -> tempfile::TempDir {
     root
 }
 
-/// A repository with only `.config/docket.toml`.
+/// A repository with only `.config/rotproof.toml`.
 fn declared(declaration: &str) -> tempfile::TempDir {
     let root = tempfile::tempdir().unwrap();
     fs::create_dir_all(root.path().join(".config")).unwrap();
-    fs::write(root.path().join(".config/docket.toml"), declaration).unwrap();
+    fs::write(root.path().join(".config/rotproof.toml"), declaration).unwrap();
     root
 }
 
@@ -44,7 +44,7 @@ fn a_missing_root_fails() {
     assert!(String::from_utf8_lossy(&out.stderr).contains("not a directory"));
 }
 
-/// A repository that keeps every rule: what `docket create` makes for a Python project without `ui`, and a log entry.
+/// A repository that keeps every rule: what `rotproof create` makes for a Python project without `ui`, and a log entry.
 fn clean_repo() -> tempfile::TempDir {
     let root = declared("stack = \"python\"\nareas = [\"a\"]\nabsent = [\"ui\"]\n");
     let out = run(&["--root", &root_arg(root.path()), "create"]);
@@ -123,7 +123,7 @@ fn each_broken_rule_fails_under_its_check() {
             "docs/backlog/index.md",
             "edited by hand\n".into(),
         ),
-        // The rules a project reads are the rules its docket checks
+        // The rules a project reads are the rules its rotproof checks
         (
             "every generated file is up to date",
             "docs/backlog/rules.md",
@@ -159,13 +159,13 @@ fn each_broken_rule_fails_under_its_check() {
         ),
         (
             "the areas are distinct headings",
-            ".config/docket.toml",
+            ".config/rotproof.toml",
             "stack = \"python\"\nareas = [\"a\", \"A\"]\nabsent = [\"ui\"]\n".into(),
         ),
         // Without the areas, no record can be judged: the check says so instead of passing them
         (
             "the bundle is seen",
-            ".config/docket.toml",
+            ".config/rotproof.toml",
             "stack = \"python\"\nabsent = [\"ui\"]\n".into(),
         ),
     ];
@@ -190,7 +190,7 @@ fn each_broken_rule_fails_under_its_check() {
 
 #[test]
 fn a_name_in_another_case_is_missing() {
-    // Windows opens each of these under the name docket looks for; Linux and GitHub do not. Renamed in two steps, as
+    // Windows opens each of these under the name rotproof looks for; Linux and GitHub do not. Renamed in two steps, as
     // a case-only rename is not a rename on Windows
     let cases = [
         (
@@ -199,13 +199,13 @@ fn a_name_in_another_case_is_missing() {
             "the bundle is seen",
         ),
         ("docs/log.md", "docs/Log.md", "the log keeps its structure"),
-        ("domain", "Domain", "the tree matches .config/docket.toml"),
+        ("domain", "Domain", "the tree matches .config/rotproof.toml"),
         (
-            ".config/docket.toml",
-            ".config/Docket.toml",
-            "the tree matches .config/docket.toml",
+            ".config/rotproof.toml",
+            ".config/Rotproof.toml",
+            "the tree matches .config/rotproof.toml",
         ),
-        // Not in the floor: only the comparison with what docket writes sees it
+        // Not in the floor: only the comparison with what rotproof writes sees it
         (
             "docs/backlog/index.md",
             "docs/backlog/Index.md",
@@ -225,7 +225,7 @@ fn a_name_in_another_case_is_missing() {
             "{to:?}: {}",
             stdout(&out)
         );
-        // Where docket names the file itself, it says what the disk has instead
+        // Where rotproof names the file itself, it says what the disk has instead
         if check != "every generated file is up to date" {
             assert!(
                 stdout(&out).contains("is there"),
@@ -373,10 +373,10 @@ Z.
 #[test]
 fn index_fails_without_the_areas() {
     let root = repo();
-    fs::remove_file(root.path().join(".config/docket.toml")).unwrap();
+    fs::remove_file(root.path().join(".config/rotproof.toml")).unwrap();
     let out = run(&["--root", &root_arg(root.path()), "index"]);
     assert_eq!(out.status.code(), Some(2));
-    assert!(String::from_utf8_lossy(&out.stderr).contains("docket init --stack"));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("rotproof init --stack"));
     assert!(!root.path().join("docs/index.md").exists());
 }
 
@@ -529,7 +529,7 @@ fn record(kind: &str, tag: &str) -> String {
 
 #[test]
 fn create_adds_the_fields_the_declaration_lacks() {
-    // A declaration an older docket wrote, before areas existed, with comments and values of the project's own
+    // A declaration an older rotproof wrote, before areas existed, with comments and values of the project's own
     let older = "# Ours\nstack = \"python\"\nabsent = [\"ui\"]  # no UI here\n";
     let root = declared("stack = \"python\"\nareas = [\"a\"]\nabsent = [\"ui\"]\n");
     let r = root.path();
@@ -549,12 +549,12 @@ fn create_adds_the_fields_the_declaration_lacks() {
         "---\ntype: Guide\ntitle: G\ndescription: H.\ntags: [howto]\n---\n\nText.\n",
     )
     .unwrap();
-    fs::write(r.join(".config/docket.toml"), older).unwrap();
+    fs::write(r.join(".config/rotproof.toml"), older).unwrap();
 
     let check = run(&["--root", &arg, "check"]);
     assert_eq!(check.status.code(), Some(1));
     assert!(
-        stdout(&check).contains("missing field `areas`: run `docket create`, which adds it"),
+        stdout(&check).contains("missing field `areas`: run `rotproof create`, which adds it"),
         "{}",
         stdout(&check)
     );
@@ -563,17 +563,17 @@ fn create_adds_the_fields_the_declaration_lacks() {
     assert!(out.status.success(), "{}", stdout(&out));
     assert!(
         stdout(&out).contains(
-            "added to .config/docket.toml: areas = [\"billing\", \"operations\", \"records\"]"
+            "added to .config/rotproof.toml: areas = [\"billing\", \"operations\", \"records\"]"
         ),
         "{}",
         stdout(&out)
     );
-    let now = fs::read_to_string(r.join(".config/docket.toml")).unwrap();
+    let now = fs::read_to_string(r.join(".config/rotproof.toml")).unwrap();
     // What was there is kept, byte for byte, and the new field says what it is and where its value came from
     assert!(now.starts_with(older), "{now}");
     assert!(
         now.contains("# The areas the records are grouped by")
-            && now.contains("# Added by `docket create` with the tags the records use"),
+            && now.contains("# Added by `rotproof create` with the tags the records use"),
         "{now}"
     );
     let check = run(&["--root", &arg, "check"]);
@@ -584,11 +584,11 @@ fn create_adds_the_fields_the_declaration_lacks() {
         "[\"billing\", \"operations\", \"records\"]",
         "[\"records\", \"operations\", \"billing\"]",
     );
-    fs::write(r.join(".config/docket.toml"), &edited).unwrap();
+    fs::write(r.join(".config/rotproof.toml"), &edited).unwrap();
     let again = run(&["--root", &arg, "create"]);
     assert!(!stdout(&again).contains("added to"), "{}", stdout(&again));
     assert_eq!(
-        fs::read_to_string(r.join(".config/docket.toml")).unwrap(),
+        fs::read_to_string(r.join(".config/rotproof.toml")).unwrap(),
         edited
     );
 }
@@ -598,10 +598,10 @@ fn create_keeps_the_line_endings_of_the_declaration() {
     // Checked out with CRLF, as git does on Windows: only the added lines are new
     let older = "# Ours\r\nstack = \"none\"\r\n";
     let root = repo();
-    fs::write(root.path().join(".config/docket.toml"), older).unwrap();
+    fs::write(root.path().join(".config/rotproof.toml"), older).unwrap();
     let out = run(&["--root", &root_arg(root.path()), "create"]);
     assert!(out.status.success(), "{}", stdout(&out));
-    let now = fs::read_to_string(root.path().join(".config/docket.toml")).unwrap();
+    let now = fs::read_to_string(root.path().join(".config/rotproof.toml")).unwrap();
     assert!(now.starts_with(older), "{now:?}");
     assert!(now.contains("\r\nareas = []\r\n"), "{now:?}");
     assert!(!now.replace("\r\n", "").contains('\n'), "{now:?}");
@@ -628,7 +628,7 @@ fn create_leaves_a_declaration_it_cannot_complete_as_it_was() {
             String::from_utf8_lossy(&out.stderr)
         );
         assert_eq!(
-            fs::read_to_string(root.path().join(".config/docket.toml")).unwrap(),
+            fs::read_to_string(root.path().join(".config/rotproof.toml")).unwrap(),
             declaration
         );
         assert!(!root.path().join("docs").exists(), "{declaration}");
@@ -638,7 +638,7 @@ fn create_leaves_a_declaration_it_cannot_complete_as_it_was() {
 #[test]
 fn create_fails_without_a_declaration_it_can_read() {
     let cases = [
-        (None, "docket init --stack"),
+        (None, "rotproof init --stack"),
         (
             Some("stack = \"cobol\"\nareas = [\"a\"]\n"),
             "unknown stack",
@@ -672,7 +672,7 @@ fn create_fails_without_a_declaration_it_can_read() {
 type Plant = Box<dyn Fn(&Path)>;
 
 fn declare(root: &Path, text: &str) {
-    fs::write(root.join(".config/docket.toml"), text).unwrap();
+    fs::write(root.join(".config/rotproof.toml"), text).unwrap();
 }
 
 fn plant_file(root: &Path, path: &str) {
@@ -707,8 +707,8 @@ fn each_difference_from_the_declaration_fails() {
             Box::new(|r| plant_file(r, "stray.PY")),
         ),
         (
-            "missing: .config/docket.toml",
-            Box::new(|r| fs::remove_file(r.join(".config/docket.toml")).unwrap()),
+            "missing: .config/rotproof.toml",
+            Box::new(|r| fs::remove_file(r.join(".config/rotproof.toml")).unwrap()),
         ),
         (
             "unknown stack",
@@ -789,7 +789,7 @@ fn each_difference_from_the_declaration_fails() {
         let out = run(&["--root", &root_arg(root.path()), "check"]);
         assert_eq!(out.status.code(), Some(1), "{said}: {}", stdout(&out));
         assert!(
-            stdout(&out).contains("the tree matches .config/docket.toml:"),
+            stdout(&out).contains("the tree matches .config/rotproof.toml:"),
             "{said}: {}",
             stdout(&out)
         );
@@ -797,7 +797,7 @@ fn each_difference_from_the_declaration_fails() {
     }
 }
 
-/// A repository that keeps every rule, with `ui`: what `docket create` makes for `stack`, and a log entry.
+/// A repository that keeps every rule, with `ui`: what `rotproof create` makes for `stack`, and a log entry.
 fn repo_with_ui(stack: &str, absent: &str) -> tempfile::TempDir {
     let root = declared(&format!(
         "stack = \"{stack}\"\nareas = [\"a\"]\nabsent = [{absent}]\n"
@@ -1030,7 +1030,7 @@ fn the_stacks_without_a_direction_check_say_so() {
         assert!(out.status.success(), "{stack}: {said}");
         assert!(
             said.contains(&format!(
-                "the direction of imports is not checked: docket does not read the imports of a {stack} project yet"
+                "the direction of imports is not checked: rotproof does not read the imports of a {stack} project yet"
             )),
             "{stack}: {said}"
         );
@@ -1104,11 +1104,11 @@ fn init_writes_a_declaration_that_create_reads() {
             String::from_utf8_lossy(&out.stderr)
         );
         assert!(
-            stdout(&out).contains("wrote .config/docket.toml"),
+            stdout(&out).contains("wrote .config/rotproof.toml"),
             "{stack}: {}",
             stdout(&out)
         );
-        let written = fs::read_to_string(root.path().join(".config/docket.toml")).unwrap();
+        let written = fs::read_to_string(root.path().join(".config/rotproof.toml")).unwrap();
         assert!(
             written.contains(&format!("stack = \"{stack}\"")),
             "{written}"
@@ -1129,7 +1129,7 @@ fn init_writes_a_declaration_that_create_reads() {
         let again = run(&["--root", &arg, "init", "--stack", stack]);
         assert_eq!(again.status.code(), Some(2), "{stack}");
         assert!(String::from_utf8_lossy(&again.stderr).contains("never overwrites"));
-        let kept = fs::read_to_string(root.path().join(".config/docket.toml")).unwrap();
+        let kept = fs::read_to_string(root.path().join(".config/rotproof.toml")).unwrap();
         assert!(kept.ends_with("# edited\n"), "{stack}: {kept}");
     }
 }

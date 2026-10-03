@@ -1,14 +1,14 @@
-//! `docket create`: make what `.config/docket.toml` declares and the tree does not have yet.
+//! `rotproof create`: make what `.config/rotproof.toml` declares and the tree does not have yet.
 //!
 //! - Each layer of the stack's layout that is neither declared absent nor present (its path exists) is made, with its
 //!   files. A present layer is the project's, and nothing in it is touched.
 //!   A repository that keeps records only (`stack = "none"`) has no layers to make.
 //! - The records skeleton: the directories of `docs/`, `docs/log.md` with its title when it does not exist, and the
-//!   generated files (the index files, `docs/backlog/rules.md` and `docs/specs/rules.md`), which docket rewrites.
+//!   generated files (the index files, `docs/backlog/rules.md` and `docs/specs/rules.md`), which rotproof rewrites.
 //!
-//! - The fields the declaration lacks that docket requires (`ADDED` in `layers.rs`): an upgrade of docket that adds a
-//!   field fails `docket check` until `docket create` runs, and then only on what the new rules find. The comments and
-//!   the values already in the declaration are kept, and a value that is present is never changed.
+//! - The fields the declaration lacks that rotproof requires (`ADDED` in `layers.rs`): an upgrade of rotproof that adds
+//!   a field fails `rotproof check` until `rotproof create` runs, and then only on what the new rules find. The
+//!   comments and the values already in the declaration are kept, and a value that is present is never changed.
 //!
 //! It never overwrites a file it does not generate, apart from adding those fields, and never moves or deletes one. It runs when a project starts, and
 //! again when its declaration is changed on purpose; it never runs by itself, so a layer removed by mistake fails the
@@ -26,7 +26,7 @@ use crate::frontmatter::split;
 use crate::layers::{ADDED, DECLARATION, Declaration, Declared, MISSING, declaration};
 use crate::source::{exactly, read_source, relative_path};
 
-/// What `docket create` did.
+/// What `rotproof create` did.
 #[derive(Debug, Default)]
 pub struct Made {
     /// The files written, from the root, with `/`: made new or rewritten with a change
@@ -104,7 +104,9 @@ fn complete(root: &Path) -> Result<Option<(String, Vec<String>)>, String> {
         }
         let value = match field.name {
             "areas" => record_tags(root)?,
-            name => unreachable!("every field docket adds has a rule for its first value: {name}"),
+            name => {
+                unreachable!("every field rotproof adds has a rule for its first value: {name}")
+            }
         };
         let mut array = Array::new();
         array.extend(value.iter().map(String::as_str));
@@ -134,7 +136,7 @@ fn complete(root: &Path) -> Result<Option<(String, Vec<String>)>, String> {
 }
 
 /// Every tag the backlog items and specs use, sorted by name: the first value of `areas`, so the records that fit their
-/// one-area rule keep fitting once the field exists. A document that cannot be read is left to `docket check`.
+/// one-area rule keep fitting once the field exists. A document that cannot be read is left to `rotproof check`.
 fn record_tags(root: &Path) -> Result<Vec<String>, String> {
     let bundle = Bundle::new(root, Vec::new());
     let mut tags = BTreeSet::new();

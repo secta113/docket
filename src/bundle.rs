@@ -1,7 +1,7 @@
 //! `docs/` as one OKF 0.2 bundle: reading its documents, and the index file each directory should contain.
 //!
 //! Every `.md` under `docs/` except the reserved names is a document with frontmatter. The index files are never
-//! written by hand: `docket index` writes them, and `docket check` fails when one differs from what it would write.
+//! written by hand: `rotproof index` writes them, and `rotproof check` fails when one differs from what it would write.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -19,16 +19,16 @@ use crate::source::read_source;
 /// File names OKF reserves. Never used for a document
 pub const RESERVED: [&str; 2] = ["index.md", "log.md"];
 /// The notice at the top of every generated index. An HTML comment, so OKF readers do not see it
-pub const GENERATED: &str = "<!-- Generated from the frontmatter by `docket index`. Do not edit: `docket check` fails \
-                             when this file differs from what `docket index` writes. -->";
-/// The backlog rules. docket writes them like an index file, so the rules a project reads are the rules its docket
+pub const GENERATED: &str = "<!-- Generated from the frontmatter by `rotproof index`. Do not edit: `rotproof check` \
+                             fails when this file differs from what `rotproof index` writes. -->";
+/// The backlog rules. rotproof writes them like an index file, so the rules a project reads are the rules its rotproof
 /// checks
 pub const RULES: &str = include_str!("../records/rules.md");
 /// The spec rules, written like the backlog rules
 pub const SPEC_RULES: &str = include_str!("../records/spec-rules.md");
 /// The one directory of specs that holds guides: the spec rules, and any a project adds
 const GUIDES_AMONG_SPECS: &str = "specs";
-/// The log as `docket create` makes it. From then on it is the project's
+/// The log as `rotproof create` makes it. From then on it is the project's
 pub const LOG: &str = include_str!("../records/log.md");
 /// The bundle-root index links to these, in this order
 const ROOT_ENTRIES: [(&str, &str, &str); 4] = [
@@ -280,7 +280,7 @@ impl Bundle {
         Ok(docs)
     }
 
-    /// Every file docket generates in the bundle (the index files and the backlog rules) -> what it should contain
+    /// Every file rotproof generates in the bundle (the index files and the backlog rules) -> what it should contain
     /// now, and the documents left out of the index files.
     pub fn expected(&self) -> io::Result<(Vec<(PathBuf, String)>, Problems)> {
         // The rules as they are about to be written, so the backlog index lists them on the run that writes them
@@ -312,7 +312,7 @@ impl Bundle {
     }
 
     /// Every spec of `docs/specs/` and `docs/done/`, checked one by one and against each other. The spec rules are read
-    /// as docket writes them, so the index lists them on the run that writes them.
+    /// as rotproof writes them, so the index lists them on the run that writes them.
     pub fn read_specs(&self) -> io::Result<Specs> {
         let mut folders = SPEC_FOLDERS
             .iter()

@@ -1,5 +1,5 @@
 //! The layers: what they are (the table, the same in every stack), where they live (one layout per stack), and what a
-//! project declares (`.config/docket.toml`).
+//! project declares (`.config/rotproof.toml`).
 //!
 //! The table and the layouts are data files in `layers/`, built into the binary, so reviewing a layout means reading
 //! one file.
@@ -12,10 +12,10 @@ use std::path::Path;
 use serde::Deserialize;
 
 /// Where a project declares its structure, from the root
-pub const DECLARATION: &str = ".config/docket.toml";
+pub const DECLARATION: &str = ".config/rotproof.toml";
 /// What to do when the declaration is missing
 pub const MISSING: &str =
-    "missing: .config/docket.toml. Write it with `docket init --stack <stack>`";
+    "missing: .config/rotproof.toml. Write it with `rotproof init --stack <stack>`";
 /// The stack of a repository that keeps records only: no layers, and no structure to check
 pub const RECORDS_ONLY: &str = "none";
 
@@ -46,7 +46,7 @@ pub struct Table {
     pub levels: Vec<Entry>,
 }
 
-/// The table built into docket.
+/// The table built into rotproof.
 pub fn table() -> Table {
     toml::from_str(TABLE).expect("layers/table.toml is valid: a test reads it")
 }
@@ -108,7 +108,7 @@ pub struct Place {
     pub files: Vec<(String, String)>,
 }
 
-/// The layout of a stack, or `None` when docket has none by that name.
+/// The layout of a stack, or `None` when rotproof has none by that name.
 pub fn layout(stack: &str) -> Option<Layout> {
     STACKS
         .iter()
@@ -239,7 +239,7 @@ fn render(files: &[File], at: &str, name: &str, prefix: &str, doc: &str) -> Vec<
         .collect()
 }
 
-/// What a project declares in `.config/docket.toml`.
+/// What a project declares in `.config/rotproof.toml`.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Declaration {
@@ -293,7 +293,7 @@ pub fn area_problems(areas: &[String]) -> Vec<String> {
 
 /// The declaration, or why it cannot be read. `Ok(None)` when the file does not exist.
 pub fn declaration(root: &Path) -> io::Result<Option<Result<Declaration, String>>> {
-    // By the exact name, before anything asks the operating system: `.config/Docket.toml` opens as the declaration on
+    // By the exact name, before anything asks the operating system: `.config/Rotproof.toml` opens as the declaration on
     // Windows, and is not there on Linux, where asking first would say only that the declaration is missing
     let path = match crate::source::lookup(root, DECLARATION) {
         crate::source::Lookup::Found(path) => path,
@@ -308,12 +308,12 @@ pub fn declaration(root: &Path) -> io::Result<Option<Result<Declaration, String>
         .map_err(|e| io::Error::new(e.kind(), format!("{DECLARATION}: {e}")))?;
     Ok(Some(toml::from_str(&text).map_err(|e| {
         let why = e.message().to_string();
-        // A field a newer docket requires: the upgrade is to run `docket create`, not to look the field up
+        // A field a newer rotproof requires: the upgrade is to run `rotproof create`, not to look the field up
         match ADDED
             .iter()
             .find(|f| why == format!("missing field `{}`", f.name))
         {
-            Some(_) => format!("{why}: run `docket create`, which adds it"),
+            Some(_) => format!("{why}: run `rotproof create`, which adds it"),
             None => why,
         }
     })))
@@ -323,22 +323,22 @@ pub fn declaration(root: &Path) -> io::Result<Option<Result<Declaration, String>
 const AREAS_COMMENT: &str = "# The areas the records are grouped by, in this order, such as \"billing\" or \"records\". Every backlog\n\
                              # item and spec has exactly one of them in tags, and the index files group by them\n";
 
-/// A field the declaration requires that `docket create` adds when it is missing, so a declaration written by an older
-/// docket fails only until the upgrade runs `docket create`, never on its shape.
+/// A field the declaration requires that `rotproof create` adds when it is missing, so a declaration written by an
+/// older rotproof fails only until the upgrade runs `rotproof create`, never on its shape.
 pub struct Added {
     pub name: &'static str,
-    /// What it is, as `docket init` writes it above the field
+    /// What it is, as `rotproof init` writes it above the field
     pub comment: &'static str,
     /// Where the first value came from, and what to do with it, written under the comment
     pub first_value: &'static str,
 }
 
-/// Every field `docket create` adds. Each has a rule for its first value in `create.rs`.
+/// Every field `rotproof create` adds. Each has a rule for its first value in `create.rs`.
 pub const ADDED: [Added; 1] = [Added {
     name: "areas",
     comment: AREAS_COMMENT,
-    first_value: "# Added by `docket create` with the tags the records use, sorted by name: put them in the order the\n\
-                  # index files should show them\n",
+    first_value: "# Added by `rotproof create` with the tags the records use, sorted by name: put them in the order\n\
+                  # the index files should show them\n",
 }];
 
 /// Every stack a declaration may name, `none` last.
@@ -350,11 +350,11 @@ pub fn known_stacks() -> Vec<&'static str> {
         .collect()
 }
 
-/// The declaration `docket init` writes for a stack: every field with what it means, so the project edits it rather
+/// The declaration `rotproof init` writes for a stack: every field with what it means, so the project edits it rather
 /// than looking it up.
 pub fn declaration_text(stack: &str) -> String {
-    let head = "# What docket keeps in this project. Edit it, then run `docket create` to make what is missing.\n\
-                # `docket check` fails when the tree and this file differ, either way.\n";
+    let head = "# What rotproof keeps in this project. Edit it, then run `rotproof create` to make what is missing.\n\
+                # `rotproof check` fails when the tree and this file differ, either way.\n";
     let stacks = known_stacks().join(" | ");
     let areas = format!("{AREAS_COMMENT}areas = []\n");
     if stack == RECORDS_ONLY {
@@ -367,8 +367,8 @@ pub fn declaration_text(stack: &str) -> String {
         "{head}\n# {stacks}\nstack = \"{stack}\"\n\n{areas}\n\
          # Layers this project does not have, such as \"ui\" or \"ui.templates\". Delete the directory too\n\
          absent = []\n\n\
-         # Paths outside the layers that docket does not look into, such as \"scripts\" (helper scripts, generated or\n\
-         # vendored code). A path that holds a layer, or does not exist, fails\n\
+         # Paths outside the layers that rotproof does not look into, such as \"scripts\" (helper scripts, generated\n\
+         # or vendored code). A path that holds a layer, or does not exist, fails\n\
          unchecked = []\n"
     )
 }
@@ -550,17 +550,17 @@ mod tests {
 
     #[test]
     fn areas_are_distinct_headings() {
-        let good: Vec<String> = ["docket", "記録", "Records of billing"]
+        let good: Vec<String> = ["rotproof", "記録", "Records of billing"]
             .map(String::from)
             .into();
         assert_eq!(area_problems(&good), Vec::<String>::new());
         let bad = [
             vec![""],
             vec!["  "],
-            vec![" docket"],
-            vec!["docket "],
-            vec!["docket", "Docket"],
-            vec!["docket", "docket"],
+            vec![" rotproof"],
+            vec!["rotproof "],
+            vec!["rotproof", "Rotproof"],
+            vec!["rotproof", "rotproof"],
             // A heading is one line, or the rest of the area becomes a heading of its own
             vec!["injected\n# EVIL_AREA"],
             vec!["a\rb"],

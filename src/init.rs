@@ -1,7 +1,7 @@
-//! `docket init`: write a project's declaration, `.config/docket.toml`, once.
+//! `rotproof init`: write a project's declaration, `.config/rotproof.toml`, once.
 //!
-//! It writes only the declaration, so the project declares the layers it does not have before `docket create` makes
-//! anything. The declaration is the project's from then on: `docket init` never overwrites it.
+//! It writes only the declaration, so the project declares the layers it does not have before `rotproof create` makes
+//! anything. The declaration is the project's from then on: `rotproof init` never overwrites it.
 
 use std::fs;
 use std::path::Path;
@@ -20,7 +20,7 @@ pub fn init(root: &Path, stack: &str) -> Result<&'static str, String> {
     let path = root.join(DECLARATION);
     if path.exists() {
         return Err(format!(
-            "{DECLARATION} exists, and docket init never overwrites it: edit it, then run `docket create`"
+            "{DECLARATION} exists, and rotproof init never overwrites it: edit it, then run `rotproof create`"
         ));
     }
     if let Some(dir) = path.parent() {

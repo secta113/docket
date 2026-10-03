@@ -1,10 +1,10 @@
-# The Python package: a wheel that carries only the docket binary (no Python code), installed with pip like ruff
+# The Python package: a wheel that carries only the rotproof binary (no Python code), installed with pip like ruff
 [build-system]
 requires = ["maturin>=1.15,<2"]
 build-backend = "maturin"
 
 [project]
-name = "docket"
+name = "rotproof"
 description = "Checks the records an agent works from (backlog, specs, log) and writes their index files"
 readme = "README.md"
 requires-python = ">=3.9"

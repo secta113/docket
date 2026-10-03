@@ -35,8 +35,8 @@ jobs:
       - run: pip install -r requirements-build.txt
       - run: maturin build --release --out dist
       # The wheel installs, and its binary runs, as it will for a user
-      - run: pip install --find-links dist docket
-      - run: docket --version
+      - run: pip install --find-links dist rotproof
+      - run: rotproof --version
       - uses: actions/upload-artifact@v7
         with:
           name: wheel-${{ matrix.os }}

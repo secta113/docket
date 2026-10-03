@@ -1,8 +1,8 @@
 name: Release
 
-# A pushed tag v<version> releases docket: the wheels to PyPI, and the wheels with an archive of the binary per platform
-# to a GitHub Release. What is released is what was tested: the archives hold the binary taken out of the tested wheel.
-# Run by hand (workflow_dispatch), it builds, tests and packages everything and publishes nothing
+# A pushed tag v<version> releases rotproof: the wheels to PyPI, and the wheels with an archive of the binary per
+# platform to a GitHub Release. What is released is what was tested: the archives hold the binary taken out of the
+# tested wheel. Run by hand (workflow_dispatch), it builds, tests and packages everything and publishes nothing
 on:
   push:
     tags: ["v*"]
@@ -23,7 +23,7 @@ jobs:
         if: github.ref_type == 'tag'
         run: |
           version=$(cargo metadata --locked --no-deps --format-version 1 \
-            | python3 -c 'import json, sys; print(next(p["version"] for p in json.load(sys.stdin)["packages"] if p["name"] == "docket"))')
+            | python3 -c 'import json, sys; print(next(p["version"] for p in json.load(sys.stdin)["packages"] if p["name"] == "rotproof"))')
           if [ "v$version" != "$GITHUB_REF_NAME" ]; then
             echo "::error::the tag is $GITHUB_REF_NAME, but Cargo.toml names $version"
             exit 1
@@ -110,7 +110,7 @@ jobs:
           else
             . "$RUNNER_TEMP/venv/bin/activate"
           fi
-          python -m pip install --no-index --find-links dist docket
+          python -m pip install --no-index --find-links dist rotproof
           bash .github/smoke.sh
       # pip in the manylinux2014 image (glibc 2.17) installs the wheel only if its tag allows that glibc, and the binary
       # runs there only if it needs no newer one
@@ -120,7 +120,7 @@ jobs:
           docker run --rm -v "$PWD:/io" -w /io quay.io/pypa/manylinux2014_x86_64:latest bash -euo pipefail -c '
             ldd --version | sed -n 1p
             /opt/python/cp313-cp313/bin/python -m venv /opt/venv
-            /opt/venv/bin/pip install --no-index --find-links dist docket
+            /opt/venv/bin/pip install --no-index --find-links dist rotproof
             PATH="/opt/venv/bin:$PATH" bash .github/smoke.sh
           '
 
@@ -155,17 +155,17 @@ jobs:
           pack() { # wheel, target, binary name, archive command
             local wheel=$1 target=$2 binary=$3 version dir
             version=$(basename "$wheel" | cut -d- -f2)
-            dir="docket-v$version-$target"
+            dir="rotproof-v$version-$target"
             mkdir -p "work/$dir"
             unzip -q -o "$wheel" -d "work/wheel-$target"
-            cp "work/wheel-$target"/docket-*.data/scripts/"$binary" "work/$dir/"
-            cp "work/wheel-$target"/docket-*.dist-info/licenses/* "work/$dir/"
+            cp "work/wheel-$target"/rotproof-*.data/scripts/"$binary" "work/$dir/"
+            cp "work/wheel-$target"/rotproof-*.dist-info/licenses/* "work/$dir/"
             echo "$dir"
           }
-          dir=$(pack "${linux[0]}" x86_64-unknown-linux-gnu docket)
-          chmod +x "work/$dir/docket"
+          dir=$(pack "${linux[0]}" x86_64-unknown-linux-gnu rotproof)
+          chmod +x "work/$dir/rotproof"
           tar -czf "archives/$dir.tar.gz" -C work "$dir"
-          dir=$(pack "${windows[0]}" x86_64-pc-windows-msvc docket.exe)
+          dir=$(pack "${windows[0]}" x86_64-pc-windows-msvc rotproof.exe)
           (cd work && zip -q -r "../archives/$dir.zip" "$dir")
           (cd dist && sha256sum -- *.whl) > SHA256SUMS
           (cd archives && sha256sum -- *) >> SHA256SUMS
